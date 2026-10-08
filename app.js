@@ -1,28 +1,40 @@
-/* Lab Rosa eFootball - simulatore di build e gestore abilità. Nessuna dipendenza, nessun server. */
+/* MVK PES Builder - build, booster e abilità della rosa eFootball. Nessun server, nessuna dipendenza esterna. */
 (function () {
   "use strict";
   const C = window.CONFIG, SK = window.SKILLS, SEED = window.SEED;
   const KEY = "lab-rosa-efootball-v1";
   const STAT_KEYS = Object.keys(C.stats);
   const MAX_EXTRA = 5;
+  const GROUPS = ["Titolari", "Ballottaggio DC", "Panchina"];
 
   // ---------- stato ----------
   function freshState() {
     const s = JSON.parse(JSON.stringify(SEED));
-    s.players.forEach(p => {
-      p.role = C.defaultRoles[p.name] || Object.keys(C.roles)[0];
-      p.build = p.build || {};
-      p.pointsOverride = null;
-    });
+    s.players.forEach(p => { p.role = C.defaultRoles[p.name] || Object.keys(C.roles)[0]; p.build = p.build || {}; p.pointsOverride = null; });
     s.boosterDefs = {};
     s.captainId = (s.players.find(p => p.name === "Oliver Kahn") || {}).id || null;
     s.returnRemoved = false;
-    s.ui = { view: "player", playerId: s.players[0].id, tab: "build", q: "" };
+    s.ui = { view: "player", playerId: s.players[0].id, group: "Titolari" };
+    return migrate(s);
+  }
+  // Aggiorna i dati salvati nel browser quando l'app introduce nuove informazioni
+  function migrate(s) {
+    s.boosterDefs = s.boosterDefs || {};
+    Object.entries(C.boosterDefsSeed || {}).forEach(([n, st]) => { if (!(s.boosterDefs[n] || []).length) s.boosterDefs[n] = st.slice(); });
+    if (!s.manager) s.manager = JSON.parse(JSON.stringify(C.managerDefault));
+    const seedById = {}; SEED.players.forEach(p => seedById[p.id] = p);
+    s.players.forEach(p => {
+      const sp = seedById[p.id];
+      if (sp && sp.build && Object.keys(sp.build).length && !Object.keys(p.build || {}).length) p.build = Object.assign({}, sp.build);
+      if (sp && sp.extraSkills.length && !(p.extraSkills || []).length) p.extraSkills = sp.extraSkills.slice();
+    });
+    s.ui = Object.assign({ view: "player", playerId: s.players[0].id, group: "Titolari", mode: "mgr", openGoal: false }, s.ui || {});
+    if (!["player", "stock", "data", "settings"].includes(s.ui.view)) s.ui.view = "player";
     return s;
   }
   let S;
-  try { S = JSON.parse(localStorage.getItem(KEY)) || freshState(); } catch (e) { S = freshState(); }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage pieno o bloccato */ } }
+  try { const raw = JSON.parse(localStorage.getItem(KEY)); S = raw ? migrate(raw) : freshState(); } catch (e) { S = freshState(); }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage non disponibile */ } }
 
   // ---------- utilità ----------
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -31,14 +43,23 @@
   const isSpecial = k => !!(SK[k] && SK[k].special);
   const player = id => S.players.find(p => p.id === id);
   const cur = () => player(S.ui.playerId) || S.players[0];
-  function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 1800); }
+  const band = v => v >= 90 ? "b90" : v >= 80 ? "b80" : v >= 70 ? "b70" : "b0";
+  const WF = { "Almost Never": "Quasi mai", "Rarely": "Raramente", "Occasionally": "Sporadicamente", "Regularly": "Regolarmente", "Medium": "Media", "High": "Alta", "Very High": "Molto alta", "Low": "Bassa" };
+  const FORM = { "Unwavering": "Incrollabile", "Standard": "Normale", "Inconsistent": "Incostante" };
+  const STYLE = { "Goal Poacher": "Opportunista", "Fox in the Box": "Rapace d'area", "Prolific Winger": "Ala prolifica", "Hole Player": "Giocatore chiave", "Creative Playmaker": "Regista creativo", "Box-to-Box": "Onnipresente", "Anchor Man": "Collante", "Build Up": "Sviluppo", "Attacking Full-back": "Terzino offensivo", "Defensive Full-back": "Terzino difensivo", "Defensive GK": "PT difensivo", "The Destroyer": "Incontrista", "Covering Role": "Ruolo di copertura", "Front Line Pressure": "Pressione in attacco", "Attack Outlet": "Fulcro dell'attacco", "All-action Defender": "Difensore instancabile", "Orchestrator": "Regista", "Basic": "Base" };
+  const tr = (m, v) => m[v] || v || "-";
+  function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2000); }
 
   // ---------- build ----------
   const levelCost = n => Math.ceil(n / C.levelBlock);
   const catCost = L => { let c = 0; for (let i = 1; i <= L; i++) c += levelCost(i); return c; };
   const totalPoints = p => (p.pointsOverride != null ? p.pointsOverride : p.card.points);
-  const spent = p => C.categories.reduce((a, c) => a + catCost(p.build[c.key] || 0), 0);
-  const canBuild = p => p.card.cardType !== "Trending" && totalPoints(p) != null;
+  const spentOf = b => C.categories.reduce((a, c) => a + catCost(b[c.key] || 0), 0);
+  const spent = p => spentOf(p.build);
+  const isTrending = p => p.card.cardType === "Trending";
+  const canTrain = p => !isTrending(p);
+  const catOf = k => C.categories.find(c => c.stats.includes(k));
+  const visibleCats = p => C.categories.filter(c => p.role === "PT" ? !["shooting", "dribbling", "defending"].includes(c.key) : !c.key.startsWith("gk"));
 
   function trainedStats(p, build = p.build) {
     const st = {};
@@ -51,23 +72,31 @@
     (p.boosters || []).forEach(b => (S.boosterDefs[b.name] || []).forEach(k => add[k] = (add[k] || 0) + b.value));
     return add;
   }
-  function roleScore(stats, role) {
-    const w = (C.roles[role] || {}).weights || {};
+  // mode: "base" = carta, "build" = build + booster, "mgr" = build + booster + allenatore
+  function statsFor(p, mode = S.ui.mode, build = p.build) {
+    const out = {};
+    if (mode === "base") { STAT_KEYS.forEach(k => out[k] = p.card.stats[k]); return out; }
+    const tr0 = trainedStats(p, build), add = boosterAdds(p), m = S.manager;
+    STAT_KEYS.forEach(k => {
+      let v = tr0[k] + (add[k] || 0);
+      if (mode === "mgr" && m && m.on) { v += (m.add[k] || 0); v += Math.floor(v * m.pct / 100 + 0.45); }
+      out[k] = v;
+    });
+    return out;
+  }
+  function weightedScore(stats, w) {
     let a = 0, t = 0;
     Object.entries(w).forEach(([k, v]) => { a += v * stats[k]; t += v; });
     return t ? a / t : 0;
   }
-  const catOf = k => C.categories.find(c => c.stats.includes(k));
-  // Ottimizzatore: 1) raggiunge i minimi richiesti, 2) spende il resto dove il peso guadagnato per punto è massimo.
+  // Ottimizzatore: 1) raggiunge i minimi richiesti, 2) spende il resto dove il peso guadagnato per punto è massimo
   function optimize(p, fromZero, w = C.roles[p.role].weights, mins = {}) {
     const b = fromZero ? {} : Object.assign({}, p.build);
-    let left = totalPoints(p) - C.categories.reduce((a, c) => a + catCost(b[c.key] || 0), 0);
-    const add = boosterAdds(p);
+    let left = totalPoints(p) - spentOf(b);
     Object.entries(mins).filter(([, v]) => v > 0).sort((x, y) => (w[y[0]] || 0) - (w[x[0]] || 0)).forEach(([k, v]) => {
       const c = catOf(k); if (!c) return;
       for (;;) {
-        const st = trainedStats(p, b);
-        if (st[k] + (add[k] || 0) >= v || st[k] >= C.statCap) break;
+        if (statsFor(p, "build", b)[k] >= v || trainedStats(p, b)[k] >= C.statCap) break;
         const cost = levelCost((b[c.key] || 0) + 1);
         if (cost > left) break;
         b[c.key] = (b[c.key] || 0) + 1; left -= cost;
@@ -77,7 +106,7 @@
       const st = trainedStats(p, b);
       let best = null;
       C.categories.forEach(c => {
-        const L = (b[c.key] || 0) + 1, cost = levelCost(L);
+        const cost = levelCost((b[c.key] || 0) + 1);
         if (cost > left) return;
         const gain = c.stats.reduce((a, k) => a + (st[k] < C.statCap ? (w[k] || 0) : 0), 0);
         if (gain <= 0) return;
@@ -90,15 +119,12 @@
     return b;
   }
 
-  // ---------- obiettivo personalizzato ----------
+  // ---------- obiettivo ----------
   const goalOf = p => (p.goal = p.goal || { text: "", weights: {}, mins: {}, blend: true });
+  const goalKeys = p => Object.keys(goalOf(p).weights).filter(k => goalOf(p).weights[k] > 0);
   function parseGoal(text) {
-    const t = " " + text.toLowerCase() + " ", w = {};
-    C.goalKeywords.forEach(g => {
-      if (new RegExp(g.re).test(t)) Object.entries(g.w).forEach(([k, v]) => { w[k] = Math.max(w[k] || 0, v); });
-    });
-    const mins = {};
-    // "velocità 90", "dribbling almeno 92": numero dopo la parola chiave = minimo richiesto
+    const t = " " + text.toLowerCase() + " ", w = {}, mins = {};
+    C.goalKeywords.forEach(g => { if (new RegExp(g.re).test(t)) Object.entries(g.w).forEach(([k, v]) => { w[k] = Math.max(w[k] || 0, v); }); });
     C.goalKeywords.forEach(g => {
       const m = t.match(new RegExp("(?:" + g.re + ")[^0-9,;.]{0,14}(\\d{2,3})"));
       if (m) { const main = Object.entries(g.w).sort((a, b) => b[1] - a[1])[0][0]; mins[main] = Number(m[1]); }
@@ -114,9 +140,9 @@
   function goalSkills(p) {
     const g = goalOf(p), own = owned(p), score = {};
     Object.entries(g.weights).forEach(([k, v]) => (C.statSkills[k] || []).forEach(s => { if (!own.has(s) && !isSpecial(s)) score[s] = (score[s] || 0) + v; }));
-    return Object.entries(score).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 7);
+    return Object.entries(score).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 6);
   }
-  function boosterFit(name, w) { return (S.boosterDefs[name] || []).reduce((a, k) => a + (w[k] || 0), 0); }
+  const boosterFit = (name, w) => (S.boosterDefs[name] || []).reduce((a, k) => a + (w[k] || 0), 0);
 
   // ---------- abilità ----------
   const owned = p => new Set([...p.baseSkills, ...p.extraSkills]);
@@ -128,274 +154,197 @@
     if (k === "Captaincy") return p.id === S.captainId ? "key" : "weak";
     if (C.lowValueSkills.includes(k)) return "weak";
     const cat = SK[k] && SK[k].cat;
-    const defRole = /DC|Terzino|MED|Mediano|PT/.test(p.role);
-    if (defRole && (cat === "dri" || cat === "sho")) return "weak";
+    if (/DC|Terzino|MED|Mediano/.test(p.role) && (cat === "dri" || cat === "sho")) return "weak";
     if (p.role === "PT" && cat !== "gk" && cat !== "pas") return "weak";
     return "neutral";
   }
   function warnings(p) {
-    const w = [];
-    const all = owned(p);
-    if (all.has("Super-sub") && p.group === "Titolari") w.push("Ha Riserva di lusso ma è tra i titolari: l'abilità funziona solo se entra dalla panchina nel secondo tempo.");
-    if (all.has("Captaincy") && p.id !== S.captainId) w.push("Ha Leader ma non è il capitano: l'abilità conta solo sul capitano (lo scegli in Impostazioni).");
-    if (p.extraSkills.length < MAX_EXTRA && canTrain(p)) w.push(`Ha ${MAX_EXTRA - p.extraSkills.length} slot extra liberi.`);
+    const w = [], all = owned(p);
+    if (all.has("Super-sub") && p.group === "Titolari") w.push("Ha Riserva di lusso ma è titolare: l'abilità funziona solo se entra dalla panchina nel secondo tempo.");
+    if (all.has("Captaincy") && p.id !== S.captainId) w.push("Ha Leader ma non è il capitano: conta solo sul capitano (Impostazioni).");
     return w;
   }
-  const canTrain = p => p.card.cardType !== "Trending";
 
   // ---------- render ----------
   function render() {
-    document.querySelectorAll(".navbtn").forEach(b => b.setAttribute("aria-current", String(b.dataset.view === S.ui.view)));
-    renderRoster();
+    document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-current", String(b.dataset.view === S.ui.view)));
     const m = $("#main");
     if (S.ui.view === "stock") m.innerHTML = viewStock();
     else if (S.ui.view === "settings") m.innerHTML = viewSettings();
     else if (S.ui.view === "data") m.innerHTML = viewData();
-    else m.innerHTML = viewPlayer(cur());
+    else m.innerHTML = viewPicker() + viewPlayer(cur());
     save();
   }
 
-  function renderRoster() {
-    const q = (S.ui.q || "").toLowerCase();
-    const groups = ["Titolari", "Ballottaggio DC", "Panchina"];
-    let h = `<input class="search" type="text" placeholder="Cerca giocatore" value="${esc(S.ui.q)}" data-act="search" aria-label="Cerca giocatore">`;
-    groups.forEach(g => {
-      const list = S.players.filter(p => p.group === g && p.name.toLowerCase().includes(q));
-      if (!list.length) return;
-      h += `<div class="group-title">${g}</div>`;
-      list.forEach(p => {
-        const sel = S.ui.view === "player" && p.id === S.ui.playerId;
-        h += `<button class="prow" data-act="pick" data-id="${p.id}" aria-current="${sel}">
-          ${p.img ? `<img src="${p.img}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
-          <span><span class="pname">${esc(p.name)}</span><br><span class="prole">${esc(p.role)}</span></span>
-          <span class="form ${esc(p.weekForm)}" title="Forma della settimana">${esc(p.weekForm || "–")}</span></button>`;
-      });
-    });
-    $("#roster").innerHTML = h;
-  }
-
-  function mobilePicker(p) {
-    return `<div class="mobile-pick"><select data-act="pickSel" aria-label="Scegli giocatore">${S.players.map(x => `<option value="${x.id}" ${x.id === p.id ? "selected" : ""}>${esc(x.name)} (${esc(x.group)})</option>`).join("")}</select></div>`;
+  function viewPicker() {
+    const list = S.players.filter(p => p.group === S.ui.group);
+    return `<section class="picker" aria-label="Scegli giocatore">
+      <div class="seg" role="tablist">${GROUPS.map(g => `<button role="tab" data-act="group" data-g="${g}" aria-selected="${g === S.ui.group}">${g} <span>${S.players.filter(p => p.group === g).length}</span></button>`).join("")}</div>
+      <div class="strip">${list.map(p => `<button class="thumb" data-act="pick" data-id="${p.id}" aria-current="${p.id === S.ui.playerId}" title="${esc(p.name)}">
+        ${p.img ? `<img src="${p.img}" alt="" loading="lazy">` : `<span class="noimg">${esc(p.name.split(" ").pop())}</span>`}
+        <span class="tn">${esc(p.name.split(" ").pop())}</span>${p.weekForm ? `<span class="tf f${esc(p.weekForm)}">${esc(p.weekForm)}</span>` : ""}</button>`).join("")}</div>
+    </section>`;
   }
 
   function viewPlayer(p) {
-    const c = p.card;
-    const forms = ["", "A", "B", "C", "D", "E"];
-    const tab = S.ui.tab;
-    return `${mobilePicker(p)}
-    <section class="phead">
-      ${p.img ? `<img src="${p.img}" alt="Carta di ${esc(p.name)}">` : `<div class="noimg">Nessuna immagine nel file Excel</div>`}
-      <div>
-        <h2 class="pt">${esc(p.name)}</h2>
-        <p class="meta">${esc(c.cardType)}, ${esc(c.pack)} - <a href="${c.pesdbUrl}" target="_blank" rel="noopener">scheda pesdb</a></p>
-        <ul class="facts">
-          <li><span>Stili</span> ${esc(c.attStyle)} / ${esc(c.defStyle)}</li>
-          <li><span>Posizioni</span> ${esc(c.positions.join(", "))}</li>
-          <li><span>Altezza</span> ${c.height} cm</li>
-          <li><span>Piede</span> ${c.foot === "L" ? "sinistro" : "destro"}, debole ${esc(c.wfUsage)} / ${esc(c.wfAcc)}</li>
-          <li><span>Forma</span> ${esc(c.form)}</li>
-          <li><span>OV</span> ${c.ovr} → ${c.maxOvr} (file: ${esc(p.maxOvrExcel)})</li>
-        </ul>
-        <div class="controls">
-          <label>Ruolo <select data-act="role">${Object.keys(C.roles).map(r => `<option ${r === p.role ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
-          <label>Gruppo <select data-act="group">${["Titolari", "Ballottaggio DC", "Panchina"].map(g => `<option ${g === p.group ? "selected" : ""}>${g}</option>`).join("")}</select></label>
-          <label>Forma settimana ${p.formType === "fissa" ? `<strong>B (fissa)</strong>` : `<select data-act="form">${forms.map(f => `<option value="${f}" ${f === p.weekForm ? "selected" : ""}>${f || "–"}</option>`).join("")}</select>`}</label>
-        </div>
-      </div>
-    </section>
-    <div class="tabs" role="tablist">
-      <button class="tab" role="tab" data-act="tab" data-tab="build" aria-selected="${tab === "build"}">Build e booster</button>
-      <button class="tab" role="tab" data-act="tab" data-tab="skills" aria-selected="${tab === "skills"}">Abilità</button>
-    </div>
-    ${tab === "skills" ? viewSkills(p) : viewBuild(p)}`;
+    return viewHero(p) + viewBuildBar(p) + viewStats(p) + viewGoal(p) + viewSkills(p) + viewBoosterDefs(p);
   }
 
-  function viewBuild(p) {
-    const tot = totalPoints(p), sp = spent(p);
-    const trained = trainedStats(p), add = boosterAdds(p);
-    const final = {}; STAT_KEYS.forEach(k => final[k] = trained[k] + (add[k] || 0));
-    const sBase = roleScore(p.card.stats, p.role), sFin = roleScore(final, p.role);
-    const w = C.roles[p.role].weights;
-    let left = "";
-    if (p.card.cardType === "Trending") {
-      left = `<p class="note">Carta Trending: livello fisso, nessun punto progressione da distribuire. Qui vedi statistiche e booster.</p>`;
-    } else {
-      if (tot == null) left += `<p class="warn">pesdb non riporta i punti progressione di questa carta. Inseriscili dal gioco qui sotto.</p>`;
-      left += `<div class="budget"><div class="nums"><span><span class="big">${tot == null ? "?" : tot - sp}</span> punti liberi</span><span class="meta">${sp} usati su
-        <input type="number" min="0" max="200" value="${tot ?? ""}" data-act="points" aria-label="Punti progressione totali"></span></div>
-        <div class="bar"><i style="width:${tot ? Math.min(100, sp / tot * 100) : 0}%"></i></div></div>`;
-      left += viewGoal(p, tot);
-      left += `<h2 class="sec" style="margin-top:22px">Punti per categoria</h2>`;
-      C.categories.forEach(c => {
-        if (p.role !== "PT" && c.key.startsWith("gk")) return;
-        if (p.role === "PT" && ["shooting", "dribbling", "defending"].includes(c.key)) return;
-        const L = p.build[c.key] || 0, nc = levelCost(L + 1);
-        const can = tot != null && tot - sp >= nc;
-        left += `<div class="cat"><span class="cn">${esc(c.name)}</span>
-          <span class="stepper"><button data-act="lv" data-k="${c.key}" data-d="-1" ${L ? "" : "disabled"} aria-label="Togli un livello a ${esc(c.name)}">−</button>
-          <span class="lv">${L}</span>
-          <button data-act="lv" data-k="${c.key}" data-d="1" ${can ? "" : "disabled"} aria-label="Aggiungi un livello a ${esc(c.name)}">+</button>
-          <span class="nx">prossimo ${nc} pt</span></span>
-          <span class="cs">${c.stats.map(k => esc(C.stats[k])).join(", ")}</span></div>`;
-      });
-      left += `<div class="actions">
-        <button class="btn" data-act="opt" data-zero="1" ${tot == null ? "disabled" : ""}>Build per il ruolo</button>
-        <button class="btn" data-act="opt" ${tot == null ? "disabled" : ""}>Completa i punti rimasti</button>
-        <button class="btn ghost" data-act="reset">Azzera</button></div>
-        <p class="meta">"Build per il ruolo" usa i pesi del profilo "${esc(p.role)}" (in <code>data/config.js</code>). "Completa" spende solo i punti rimasti senza toccare i livelli già messi.</p>`;
-    }
-    left += viewBoosters(p);
+  function viewHero(p) {
+    const c = p.card, m = S.manager;
+    const forms = ["", "A", "B", "C", "D", "E"];
+    return `<section class="panel hero">
+      <div class="hhead">
+        <div><h2 class="pname">${esc(p.name)}</h2>
+          <div class="styles"><span class="st att">${esc(tr(STYLE, c.attStyle))}</span><span class="st def">${esc(tr(STYLE, c.defStyle))}</span></div></div>
+        <div class="tag">${esc(c.cardType)}<br><small>${esc(c.pack)}</small></div>
+      </div>
+      <div class="hgrid">
+        <div class="cardimg">${p.img ? `<img src="${p.img}" alt="Carta di ${esc(p.name)}">` : `<div class="noimg">Nessuna immagine</div>`}</div>
+        <div class="tiles">
+          <div class="tile"><span>Altezza</span><b>${c.height ?? "-"} cm</b></div>
+          <div class="tile"><span>Peso</span><b>${c.weight ?? "-"} kg</b></div>
+          <div class="tile"><span>Piede</span><b>${c.foot === "L" ? "Sinistro" : "Destro"}</b></div>
+          <div class="tile"><span>Punti</span><b>${totalPoints(p) ?? "?"}</b></div>
+        </div>
+        <div class="attrs">
+          <div><span>Frequenza piede debole</span><b>${esc(tr(WF, c.wfUsage))}</b></div>
+          <div><span>Precisione piede debole</span><b>${esc(tr(WF, c.wfAcc))}</b></div>
+          <div><span>Forma</span><b>${esc(tr(FORM, c.form))}</b></div>
+          <div><span>Resistenza infortuni</span><b class="${c.injury === "Low" ? "red" : ""}">${esc(tr(WF, c.injury))}</b></div>
+        </div>
+        <div class="mgr ${m.on ? "" : "off"}"><b>${esc(m.name)}</b><span>${m.on ? Object.entries(m.add).map(([k, v]) => `${esc(C.stats[k])} +${v}`).join(", ") + `, competenza +${m.pct}%` : "allenatore disattivato"}</span></div>
+      </div>
+      <div class="ctrls">
+        <label>Ruolo<select data-act="role">${Object.keys(C.roles).map(r => `<option ${r === p.role ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
+        <label>Gruppo<select data-act="setGroup">${GROUPS.map(g => `<option ${g === p.group ? "selected" : ""}>${g}</option>`).join("")}</select></label>
+        <label>Forma settimana${p.formType === "fissa" ? `<b class="fixed">B fissa</b>` : `<select data-act="form">${forms.map(f => `<option value="${f}" ${f === p.weekForm ? "selected" : ""}>${f || "-"}</option>`).join("")}</select>`}</label>
+        <a class="ext" href="${esc(c.pesdbUrl)}" target="_blank" rel="noopener">Scheda pesdb</a>
+      </div>
+    </section>`;
+  }
 
-    let right = viewGoalResult(p, final) + `<div class="score"><span class="big">${sFin.toFixed(1)}</span><span>indice ruolo</span><span class="delta">${sFin - sBase >= 0.05 ? "+" + (sFin - sBase).toFixed(1) + " sulla carta base" : ""}</span></div>
-      <div class="legend"><span><i style="background:var(--chalk)"></i>base</span><span><i style="background:var(--gold)"></i>build</span><span><i style="background:var(--steel)"></i>booster</span><span>• = conta per il ruolo</span></div>`;
-    C.statGroups.forEach(g => {
-      if (g.name === "Portiere" && p.role !== "PT") return;
-      right += `<div class="sgroup"><h3>${g.name}</h3>`;
-      g.stats.forEach(k => {
-        const b0 = p.card.stats[k], b1 = trained[k] - b0, b2 = add[k] || 0;
-        const pct = v => Math.max(0, Math.min(100, (v - 40) / (110 - 40) * 100));
-        right += `<div class="srow ${w[k] ? "w" : ""}"><span class="sl">${esc(C.stats[k])}</span>
-          <span class="track"><span class="b b0" style="left:0;width:${pct(b0)}%"></span>${b1 ? `<span class="b b1" style="left:${pct(b0)}%;width:${pct(b0 + b1) - pct(b0)}%"></span>` : ""}${b2 ? `<span class="b b2" style="left:${pct(b0 + b1)}%;width:${pct(b0 + b1 + b2) - pct(b0 + b1)}%"></span>` : ""}</span>
-          <span class="sv">${b0 + b1 + b2}${b1 ? `<small>+${b1}</small>` : ""}${b2 ? `<small class="bo">+${b2}</small>` : ""}</span></div>`;
-      });
-      right += `</div>`;
-    });
-    return `<div class="buildgrid"><div>${left}</div><div>${right}</div></div>`;
+  function viewBuildBar(p) {
+    const tot = totalPoints(p), sp = spent(p);
+    let h = `<section class="panel bar">
+      <div class="boosters">${p.boosters.length ? p.boosters.map(b => `<span class="bchip" title="${b.condition ? esc(b.condition.text) : ""}"><i></i>${esc(b.name)} +${b.value}${b.condition ? ` <em>cond.</em>` : ""}</span>`).join("") : `<span class="bchip none"><i></i>Nessun booster</span>`}</div>`;
+    if (isTrending(p)) return h + `<p class="muted">Carta Trending: livello fisso, nessun punto da distribuire.</p></section>`;
+    h += `<div class="pts"><span><b class="${tot != null && tot - sp === 0 ? "" : "gold"}">${tot == null ? "?" : tot - sp}</b> punti liberi su
+      <input type="number" min="0" max="200" value="${tot ?? ""}" data-act="points" aria-label="Punti progressione totali"></span>
+      <span class="acts"><button class="btn" data-act="opt" data-zero="1" ${tot == null ? "disabled" : ""}>Build per ruolo</button><button class="btn ghost" data-act="reset">Azzera</button></span></div>
+      <div class="levels">${visibleCats(p).map(c => {
+        const L = p.build[c.key] || 0, nc = levelCost(L + 1), can = tot != null && tot - sp >= nc;
+        return `<div class="lv" title="${esc(c.name)}: ${c.stats.map(k => esc(C.stats[k])).join(", ")}">
+          <span class="ln">${esc(c.name)}</span>
+          <div class="lctl"><button data-act="lv" data-k="${c.key}" data-d="-1" ${L ? "" : "disabled"} aria-label="Togli un livello a ${esc(c.name)}">−</button>
+          <b>${L}</b><button data-act="lv" data-k="${c.key}" data-d="1" ${can ? "" : "disabled"} aria-label="Aggiungi un livello a ${esc(c.name)}">+</button></div>
+          <span class="nx">+1 = ${nc} pt</span></div>`;
+      }).join("")}</div>`;
+    if (tot == null) h += `<p class="warn">Punti progressione non noti per questa carta: inseriscili qui sopra.</p>`;
+    return h + `</section>`;
+  }
+
+  function viewStats(p) {
+    const mode = S.ui.mode, st = statsFor(p, mode), base = p.card.stats;
+    const gk = goalKeys(p), w = C.roles[p.role].weights;
+    const score = weightedScore(st, w), sBase = weightedScore(base, w);
+    const cols = [
+      { n: "Attacco", s: C.statGroups[0].stats },
+      { n: "Difesa", s: p.role === "PT" ? C.statGroups[1].stats.concat(C.statGroups[3].stats) : C.statGroups[1].stats },
+      { n: "Fisico", s: C.statGroups[2].stats }
+    ];
+    return `<section class="panel">
+      <div class="shead"><div class="seg small" role="tablist" aria-label="Valori mostrati">
+        ${[["base", "Carta base"], ["build", "Build"], ["mgr", "Build + " + S.manager.name.split(" ").pop()]].map(([k, l]) => `<button role="tab" data-act="mode" data-m="${k}" aria-selected="${mode === k}" ${k === "mgr" && !S.manager.on ? "disabled" : ""}>${esc(l)}</button>`).join("")}</div>
+        <div class="score"><b>${score.toFixed(1)}</b> indice ${esc(p.role)}${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
+      <div class="scols">${cols.map(col => `<div class="scol">${col.s.map(k => {
+        const v = st[k], d = v - base[k];
+        return `<div class="srow ${band(v)}"><span class="sl">${esc(C.stats[k])}</span>${gk.includes(k) ? `<i class="dot" title="obiettivo"></i>` : ""}${d > 0 ? `<small>+${d}</small>` : ""}<b class="badge ${band(v)}">${v}</b></div>`;
+      }).join("")}</div>`).join("")}</div>
+    </section>`;
   }
 
   const WLABEL = { 3: "Principale", 2: "Importante", 1: "Utile" };
-  function viewGoal(p, tot) {
-    const g = goalOf(p), keys = Object.keys(g.weights).filter(k => g.weights[k] > 0);
-    let h = `<section class="goal"><h2 class="sec">Obiettivo build</h2>
-      <p class="meta">Scrivi cosa vuoi da questa carta, per esempio "velocità, dribbling e tiro a giro" oppure "velocità almeno 90". Puoi anche aggiungere le statistiche a mano.</p>
-      <div class="goalinput"><input type="text" data-act="goalText" value="${esc(g.text)}" placeholder="Cosa vuoi ottenere?" aria-label="Obiettivo della build">
+  function viewGoal(p) {
+    const g = goalOf(p), keys = goalKeys(p), open = S.ui.openGoal || keys.length;
+    const fin = statsFor(p, "build"), base = p.card.stats;
+    let h = `<section class="panel goal"><details ${open ? "open" : ""} data-act="goalToggle"><summary><h3>Obiettivo build</h3><span class="muted">${keys.length ? keys.map(k => esc(C.stats[k])).slice(0, 4).join(", ") + (keys.length > 4 ? "…" : "") : "dimmi cosa vuoi da questa carta"}</span></summary>
+      <div class="gin"><input type="text" data-act="goalText" value="${esc(g.text)}" placeholder="es. velocità, dribbling e tiro a giro, velocità almeno 90" aria-label="Obiettivo">
       <button class="btn" data-act="goalParse">Interpreta</button></div>`;
     if (keys.length) {
-      h += `<div class="goalrows">` + keys.sort((a, b) => g.weights[b] - g.weights[a]).map(k => `<div class="grow"><span>${esc(C.stats[k])}</span>
-        <select data-act="goalW" data-k="${k}" aria-label="Importanza">${[3, 2, 1].map(v => `<option value="${v}" ${g.weights[k] === v ? "selected" : ""}>${WLABEL[v]}</option>`).join("")}</select>
-        <input type="number" min="0" max="120" placeholder="min" value="${g.mins[k] || ""}" data-act="goalMin" data-k="${k}" aria-label="Valore minimo">
-        <button class="btn small ghost" data-act="goalDel" data-k="${k}" aria-label="Togli ${esc(C.stats[k])}">Togli</button></div>`).join("") + `</div>`;
+      h += `<div class="grows">` + keys.sort((a, b) => g.weights[b] - g.weights[a]).map(k => {
+        const mn = g.mins[k], ok = !mn || fin[k] >= mn;
+        return `<div class="grow"><span class="gl">${esc(C.stats[k])}</span>
+          <span class="gv"><b class="badge ${band(base[k])}">${base[k]}</b> → <b class="badge ${band(fin[k])}">${fin[k]}</b></span>
+          <select data-act="goalW" data-k="${k}" aria-label="Importanza">${[3, 2, 1].map(v => `<option value="${v}" ${g.weights[k] === v ? "selected" : ""}>${WLABEL[v]}</option>`).join("")}</select>
+          <input type="number" min="0" max="120" placeholder="min" value="${mn || ""}" data-act="goalMin" data-k="${k}" aria-label="Minimo" class="${ok ? "" : "ko"}">
+          <button class="x" data-act="goalDel" data-k="${k}" aria-label="Togli ${esc(C.stats[k])}">×</button></div>`;
+      }).join("") + `</div>`;
     }
-    h += `<div class="controls" style="margin-top:8px"><select data-act="goalAdd" aria-label="Aggiungi statistica"><option value="">Aggiungi statistica…</option>${STAT_KEYS.filter(k => !g.weights[k]).map(k => `<option value="${k}">${esc(C.stats[k])}</option>`).join("")}</select>
-      <label><input type="checkbox" data-act="goalBlend" ${g.blend ? "checked" : ""}> tieni conto anche del ruolo</label></div>`;
-    if (tot !== null) h += `<div class="actions"><button class="btn primary" data-act="optGoal" ${keys.length && totalPoints(p) != null ? "" : "disabled"}>Calcola build per l'obiettivo</button>
-      ${keys.length ? `<button class="btn ghost" data-act="goalClear">Svuota obiettivo</button>` : ""}</div>`;
-    return h + `</section>`;
-  }
-
-  function viewGoalResult(p, final) {
-    const g = goalOf(p), keys = Object.keys(g.weights).filter(k => g.weights[k] > 0);
-    if (!keys.length) return "";
-    const w = goalWeights(p);
-    let h = `<section class="goalres"><h2 class="sec">Risultato per l'obiettivo</h2><table class="gtable"><thead><tr><th>Statistica</th><th>Carta</th><th>Con build e booster</th><th>Minimo</th></tr></thead><tbody>`;
-    keys.sort((a, b) => g.weights[b] - g.weights[a]).forEach(k => {
-      const m = g.mins[k], ok = !m || final[k] >= m;
-      h += `<tr><td>${esc(C.stats[k])}</td><td>${p.card.stats[k]}</td><td><strong>${final[k]}</strong>${final[k] > p.card.stats[k] ? ` <small class="up">+${final[k] - p.card.stats[k]}</small>` : ""}</td><td>${m ? (ok ? `<span class="ok">${m} raggiunto</span>` : `<span class="ko">${m} non raggiunto</span>`) : "-"}</td></tr>`;
-    });
-    h += `</tbody></table>`;
-    const sk = goalSkills(p);
-    h += `<h3 class="sub">Abilità che aiutano questo obiettivo</h3>`;
-    if (!canTrain(p)) h += `<p class="meta">Carta Trending: non può imparare abilità extra.</p>`;
-    else if (!sk.length) h += `<p class="meta">Ha già le abilità allenabili collegate a queste statistiche.</p>`;
-    else h += sk.map(k => { const q = S.stock[k] || 0; return `<div class="sug"><span>${esc(it(k))}</span><span class="q ${q ? "ok" : ""}">${q ? `in magazzino: ${q}` : "da recuperare"}</span></div>`; }).join("");
-    h += `<h3 class="sub">Booster</h3>`;
-    const cur = p.boosters.map(b => S.boosterDefs[b.name] ? `${esc(b.name)}: ${boosterFit(b.name, w) > 0 ? "aiuta l'obiettivo" : "non tocca queste statistiche"}` : `${esc(b.name)}: statistiche non impostate`).join("<br>");
-    h += `<p>${cur || "Nessun booster."}</p>`;
-    const lib = Object.keys(S.boosterDefs).filter(n => (S.boosterDefs[n] || []).length).map(n => [n, boosterFit(n, w)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
-    h += lib.length ? `<p class="meta">Booster più adatti tra quelli in libreria: ${lib.map(x => esc(x[0])).join(", ")}. Contano solo dove il gioco ti lascia scegliere il 2° booster.</p>`
-      : `<p class="meta">Per avere un consiglio sul booster, imposta le statistiche dei booster in Impostazioni → Libreria booster.</p>`;
-    return h + `</section>`;
-  }
-
-  function viewBoosters(p) {
-    let h = `<div class="boosters"><h2 class="sec">Booster</h2>`;
-    if (!p.boosters.length) h += `<p class="meta">Nessun booster registrato.</p>`;
-    p.boosters.forEach((b, i) => {
-      const def = S.boosterDefs[b.name] || [];
-      h += `<div class="booster"><div class="bh"><strong>${esc(b.name)} +${b.value}</strong>
-        <span class="meta">${def.length ? def.map(k => esc(C.stats[k])).join(", ") : "statistiche non ancora impostate"}</span></div>
-        ${b.condition ? `<div class="cond">${esc(b.condition.text)}</div>` : ""}
-        <details><summary>Quali statistiche alza "${esc(b.name)}"</summary>
-        <p class="meta">Le trovi nel gioco toccando il booster sulla carta. Le imposti una volta e valgono per tutte le carte con lo stesso booster.</p>
-        <div class="statpick">${STAT_KEYS.map(k => `<label><input type="checkbox" data-act="bdef" data-b="${esc(b.name)}" data-k="${k}" ${def.includes(k) ? "checked" : ""}> ${esc(C.stats[k])}</label>`).join("")}</div>
-        </details></div>`;
-    });
-    return h + `</div>`;
+    h += `<div class="gopts"><select data-act="goalAdd" aria-label="Aggiungi statistica"><option value="">+ statistica</option>${STAT_KEYS.filter(k => !g.weights[k]).map(k => `<option value="${k}">${esc(C.stats[k])}</option>`).join("")}</select>
+      <label class="chk"><input type="checkbox" data-act="goalBlend" ${g.blend ? "checked" : ""}> considera anche il ruolo</label></div>`;
+    if (!isTrending(p)) h += `<div class="acts"><button class="btn primary" data-act="optGoal" ${keys.length && totalPoints(p) != null ? "" : "disabled"}>Calcola build per l'obiettivo</button>${keys.length ? `<button class="btn ghost" data-act="goalClear">Svuota</button>` : ""}</div>`;
+    if (keys.length) {
+      const sk = canTrain(p) ? goalSkills(p) : [];
+      const w = goalWeights(p);
+      const lib = Object.keys(S.boosterDefs).filter(n => (S.boosterDefs[n] || []).length).map(n => [n, boosterFit(n, w)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      h += `<div class="gsug"><div><h4>Abilità utili</h4>${sk.length ? `<div class="chips">${sk.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `magazzino ${q}` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">${canTrain(p) ? "Ha già quelle collegate." : "Trending: niente abilità extra."}</p>`}</div>
+        <div><h4>Booster adatti</h4>${lib.length ? `<div class="chips">${lib.map(x => `<span class="chip">${esc(x[0])}</span>`).join("")}</div><p class="muted">Contano solo dove puoi scegliere il 2° booster.</p>` : `<p class="muted">Compila la libreria booster in Impostazioni.</p>`}</div></div>`;
+    }
+    return h + `</details></section>`;
   }
 
   function viewSkills(p) {
-    const role = C.roles[p.role];
-    const own = owned(p);
-    let left = `<h2 class="sec">Abilità della carta</h2><div class="chips">${p.baseSkills.map(k => `<span class="chip ${isSpecial(k) ? "sp" : ""}" title="${esc(k)}">${esc(it(k))}</span>`).join("")}</div>`;
-    left += `<h2 class="sec" style="margin-top:22px">Slot extra</h2>`;
-    if (!canTrain(p)) left += `<p class="note">Carta Trending: non può imparare abilità extra.</p>`;
+    const role = C.roles[p.role], own = owned(p);
+    let h = `<section class="panel"><h3>Abilità</h3><div class="chips">${p.baseSkills.map(k => `<span class="chip ${isSpecial(k) ? "sp" : ""}" title="${esc(k)}">${esc(it(k))}</span>`).join("")}</div>
+      <h3>Competenze aggiuntive <span class="muted">${p.extraSkills.length}/${MAX_EXTRA}</span></h3>`;
+    if (!canTrain(p)) h += `<p class="muted">Carta Trending: non può imparare abilità extra.</p>`;
     else {
       const avail = Object.entries(S.stock).filter(([k, q]) => q > 0 && !own.has(k))
         .sort((a, b) => (role.skills.includes(b[0]) - role.skills.includes(a[0])) || it(a[0]).localeCompare(it(b[0])));
-      const opts = avail.map(([k, q]) => `<option value="${esc(k)}">${esc(it(k))} (${q})${role.skills.includes(k) ? " ★ ruolo" : ""}</option>`).join("");
+      const opts = avail.map(([k, q]) => `<option value="${esc(k)}">${role.skills.includes(k) ? "★ " : ""}${esc(it(k))} (${q})</option>`).join("");
+      h += `<div class="slots">`;
       for (let i = 0; i < MAX_EXTRA; i++) {
         const k = p.extraSkills[i];
         if (k) {
           const v = skillValue(p, k);
-          const tag = v === "key" ? `<span class="tag key">utile al ruolo</span>` : v === "weak" ? `<span class="tag weak">poco utile qui</span>` : v === "lock" ? `<span class="tag lock">bloccata</span>` : "";
-          left += `<div class="slot"><span class="n">${i + 1}</span><span><span class="sn">${esc(it(k))}</span>${tag}</span>
-            <span class="acts"><button class="btn small ghost" data-act="lock" data-k="${esc(k)}">${v === "lock" ? "Sblocca" : "Blocca"}</button>
-            ${v !== "lock" && avail.length ? `<select data-act="replace" data-i="${i}" aria-label="Sostituisci ${esc(it(k))}"><option value="">Sostituisci con…</option>${opts}</select>` : ""}
-            ${v !== "lock" ? `<button class="btn small ghost" data-act="remove" data-i="${i}">Elimina</button>` : ""}</span></div>`;
+          h += `<div class="slot ${v}"><span class="sname">${esc(it(k))}</span><span class="stag">${v === "key" ? "utile al ruolo" : v === "weak" ? "poco utile qui" : v === "lock" ? "bloccata" : ""}</span>
+            <span class="sacts"><button class="btn small ghost" data-act="lock" data-k="${esc(k)}">${v === "lock" ? "Sblocca" : "Blocca"}</button>
+            ${v !== "lock" ? `${avail.length ? `<select data-act="replace" data-i="${i}" aria-label="Sostituisci ${esc(it(k))}"><option value="">Sostituisci…</option>${opts}</select>` : ""}<button class="btn small ghost" data-act="remove" data-i="${i}">Elimina</button>` : ""}</span></div>`;
         } else {
-          left += `<div class="slot empty"><span class="n">${i + 1}</span><span class="sn">Slot libero</span>
-            <span class="acts">${avail.length ? `<select data-act="add" aria-label="Aggiungi abilità"><option value="">Aggiungi dal magazzino…</option>${opts}</select>` : `<span class="meta">magazzino vuoto</span>`}</span></div>`;
+          h += `<div class="slot empty"><span class="sname">Slot libero</span><span class="sacts">${avail.length ? `<select data-act="add" aria-label="Aggiungi abilità"><option value="">Aggiungi dal magazzino…</option>${opts}</select>` : `<span class="muted">magazzino vuoto</span>`}</span></div>`;
         }
       }
-      left += `<p class="meta">"Blocca" protegge un'abilità che vuoi tenere anche se il ruolo non la richiede (per esempio quelle che usi in combinazione). Quando sostituisci o elimini, l'abilità tolta ${S.returnRemoved ? "torna" : "non torna"} in magazzino (lo cambi in Impostazioni).</p>`;
+      h += `</div>`;
     }
-    let right = "";
-    warnings(p).forEach(x => right += `<p class="${x.startsWith("Ha ") && x.includes("slot extra liberi") ? "note" : "warn"}">${esc(x)}</p>`);
-    right += `<h2 class="sec">Priorità per "${esc(p.role)}"</h2><p>Abilità che contano per il ruolo, in ordine. Quelle già possedute sono escluse.</p>`;
+    warnings(p).forEach(x => h += `<p class="warn">${esc(x)}</p>`);
     const missing = role.skills.filter(k => !own.has(k));
-    if (!missing.length) right += `<p class="note">Ha già tutte le abilità prioritarie del ruolo.</p>`;
-    missing.forEach(k => {
-      const q = S.stock[k] || 0;
-      right += `<div class="sug"><span>${esc(it(k))}</span><span class="q ${q ? "ok" : ""}">${q ? `in magazzino: ${q}` : "da recuperare"}</span></div>`;
-    });
-    if (p.group === "Panchina" && !own.has("Super-sub")) right += `<p class="note">Se entra quasi sempre dalla panchina nel secondo tempo, valuta Riserva di lusso (in magazzino: ${S.stock["Super-sub"] || 0}).</p>`;
-    return `<div class="skillsgrid"><div>${left}</div><div>${right}</div></div>`;
+    h += `<h3>Priorità per ${esc(p.role)}</h3>${missing.length ? `<div class="chips">${missing.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `magazzino ${q}` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">Ha già tutte le abilità prioritarie del ruolo.</p>`}`;
+    if (p.group === "Panchina" && !own.has("Super-sub") && canTrain(p)) h += `<p class="note">Se entra quasi sempre nel secondo tempo, valuta Riserva di lusso (magazzino: ${S.stock["Super-sub"] || 0}).</p>`;
+    return h + `</section>`;
+  }
+
+  function boosterEditor(n) {
+    const d = S.boosterDefs[n] || [];
+    return `<details><summary>${esc(n)}: <span class="muted">${d.length ? d.map(k => esc(C.stats[k])).join(", ") : "statistiche da impostare"}</span></summary>
+      <div class="statpick">${STAT_KEYS.map(k => `<label><input type="checkbox" data-act="bdef" data-b="${esc(n)}" data-k="${k}" ${d.includes(k) ? "checked" : ""}> ${esc(C.stats[k])}</label>`).join("")}</div></details>`;
+  }
+  function viewBoosterDefs(p) {
+    if (!p.boosters.length) return "";
+    return `<section class="panel"><h3>Cosa alzano i booster</h3>${p.boosters.map(b => boosterEditor(b.name) + (b.condition ? `<p class="warn">${esc(b.condition.text)}</p>` : "")).join("")}</section>`;
   }
 
   function viewStock() {
     const keys = Object.keys(SK).filter(k => !SK[k].special && SK[k].cat !== "gk").concat(Object.keys(S.stock).filter(k => !SK[k]));
     const uniq = [...new Set(keys)].sort((a, b) => (S.stock[b] || 0) - (S.stock[a] || 0) || it(a).localeCompare(it(b)));
-    let h = `<h2 class="sec">Magazzino abilità</h2><p>Le abilità salvate che puoi insegnare. Accanto a ognuna, i giocatori della rosa a cui servirebbe per il loro ruolo (prima chi ha slot liberi).</p>
-    <table class="stocktable"><thead><tr><th>Abilità</th><th>Copie</th><th>A chi serve</th></tr></thead><tbody>`;
-    uniq.forEach(k => {
+    return `<section class="panel"><h2 class="ptitle">Magazzino abilità</h2><p class="muted">Copie salvate e giocatori a cui servirebbero per il loro ruolo (prima chi ha slot liberi).</p>
+    <div class="stock">${uniq.map(k => {
       const q = S.stock[k] || 0;
       const who = S.players.filter(p => canTrain(p) && !owned(p).has(k) && (C.roles[p.role].skills.includes(k) || (k === "Super-sub" && p.group === "Panchina")))
         .sort((a, b) => (b.extraSkills.length < MAX_EXTRA) - (a.extraSkills.length < MAX_EXTRA) || (a.group === "Titolari" ? -1 : 1));
-      h += `<tr class="${q ? "" : "zero"}"><td>${esc(it(k))}</td>
-        <td class="qty"><span class="stepper"><button data-act="stock" data-k="${esc(k)}" data-d="-1" ${q ? "" : "disabled"} aria-label="Togli una copia">−</button><span class="lv">${q}</span><button data-act="stock" data-k="${esc(k)}" data-d="1" aria-label="Aggiungi una copia">+</button></span></td>
-        <td><span class="who">${who.slice(0, 8).map(p => `<button class="linkbtn" data-act="goto" data-id="${p.id}">${esc(p.name)}${p.extraSkills.length < MAX_EXTRA ? " (slot libero)" : ""}</button>`).join(" ") || `<span class="meta">nessuno</span>`}</span></td></tr>`;
-    });
-    return h + `</tbody></table>`;
-  }
-
-  function viewSettings() {
-    return `<div class="settings">
-    <section><h2 class="sec">Capitano</h2><p>Leader funziona solo sul capitano.</p>
-      <select data-act="captain">${S.players.map(p => `<option value="${p.id}" ${p.id === S.captainId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></section>
-    <section><h2 class="sec">Abilità tolte</h2>
-      <label><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
-    <section><h2 class="sec">Libreria booster</h2>
-      <p>Per ogni booster, le statistiche che alza (le trovi nel gioco toccando il booster). Servono per le statistiche finali e per i consigli sull'obiettivo.</p>
-      <table><thead><tr><th>Booster</th><th>Statistiche</th></tr></thead><tbody>
-      ${allBoosterNames().map(n => { const d = S.boosterDefs[n] || []; return `<tr><td>${esc(n)}</td><td><details><summary>${d.length ? d.map(k => esc(C.stats[k])).join(", ") : "da impostare"}</summary><div class="statpick">${STAT_KEYS.map(k => `<label><input type="checkbox" data-act="bdef" data-b="${esc(n)}" data-k="${k}" ${d.includes(k) ? "checked" : ""}> ${esc(C.stats[k])}</label>`).join("")}</div></details></td></tr>`; }).join("")}
-      </tbody></table>
-      <div class="controls" style="margin-top:8px"><input type="text" data-act="newBooster" placeholder="Nome nuovo booster" aria-label="Nome nuovo booster"><button class="btn small" data-act="addBooster">Aggiungi booster</button></div></section>
-    <section><h2 class="sec">Regole di progressione</h2>
-      <p>Costo per livello: livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto statistica allenata: ${C.statCap}. Si modificano in <code>data/config.js</code>.</p>
-      <p class="warn">Da verificare in gioco: quali statistiche alza ogni categoria e il costo dei livelli. Confronta una build reale con quella dell'app prima di fidarti dei numeri.</p>
-      <table><thead><tr><th>Categoria</th><th>Statistiche</th></tr></thead><tbody>${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</tbody></table></section>
-    <section><h2 class="sec">Fonte dati</h2><p>Statistiche, stili e abilità base: pesdb.net (ottobre 2026). Booster, abilità extra e note: il tuo file Excel. Le 30 carte sono state abbinate confrontando le abilità base del file con quelle di pesdb.</p></section>
-    </div>`;
+      return `<div class="srec ${q ? "" : "zero"}"><div class="sr1"><b>${esc(it(k))}</b><span class="lctl"><button data-act="stock" data-k="${esc(k)}" data-d="-1" ${q ? "" : "disabled"} aria-label="Togli una copia">−</button><b>${q}</b><button data-act="stock" data-k="${esc(k)}" data-d="1" aria-label="Aggiungi una copia">+</button></span></div>
+        ${who.length ? `<div class="who">${who.slice(0, 8).map(p => `<button class="link" data-act="goto" data-id="${p.id}">${esc(p.name)}${p.extraSkills.length < MAX_EXTRA ? " ●" : ""}</button>`).join("")}</div>` : ""}</div>`;
+    }).join("")}</div><p class="muted">● = ha slot extra liberi</p></section>`;
   }
 
   function allBoosterNames() {
@@ -404,7 +353,28 @@
     return [...s].sort((a, b) => a.localeCompare(b));
   }
 
-  // ---------- dati: export / import Excel e CSV ----------
+  function viewSettings() {
+    const m = S.manager;
+    return `<section class="panel"><h2 class="ptitle">Allenatore</h2>
+      <label class="chk"><input type="checkbox" data-act="mgrOn" ${m.on ? "checked" : ""}> Applica l'allenatore alle statistiche</label>
+      <div class="ctrls"><label>Nome<input type="text" data-act="mgrName" value="${esc(m.name)}"></label>
+      <label>Competenza %<input type="number" min="0" max="10" step="0.5" value="${m.pct}" data-act="mgrPct"></label></div>
+      <p class="muted">Booster dell'allenatore (+1 su statistiche precise):</p>
+      <div class="statpick">${STAT_KEYS.map(k => `<label><input type="checkbox" data-act="mgrAdd" data-k="${k}" ${m.add[k] ? "checked" : ""}> ${esc(C.stats[k])}</label>`).join("")}</div>
+      <p class="muted">Calibrato su Conte con Conceição: +3% arrotondato, 22 statistiche su 22 coincidono con il gioco.</p></section>
+    <section class="panel"><h2 class="ptitle">Capitano</h2><p class="muted">Leader funziona solo sul capitano.</p>
+      <select data-act="captain">${S.players.map(p => `<option value="${p.id}" ${p.id === S.captainId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></section>
+    <section class="panel"><h2 class="ptitle">Libreria booster</h2><p class="muted">Statistiche alzate da ogni booster (le vedi nel gioco toccando il booster).</p>
+      ${allBoosterNames().map(boosterEditor).join("")}
+      <div class="ctrls"><input type="text" data-act="newBooster" placeholder="Nome nuovo booster" aria-label="Nome nuovo booster"><button class="btn small" data-act="addBooster">Aggiungi</button></div></section>
+    <section class="panel"><h2 class="ptitle">Abilità tolte</h2>
+      <label class="chk"><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
+    <section class="panel"><h2 class="ptitle">Regole di progressione</h2>
+      <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto statistica allenata ${C.statCap}. Verificate in gioco su Conceição.</p>
+      <table class="rules">${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</table></section>`;
+  }
+
+  // ---------- dati: export / import ----------
   const LIST_SEP = " | ";
   const skillFromName = n => {
     const x = String(n).trim(); if (!x) return null;
@@ -415,7 +385,6 @@
   const splitList = v => String(v ?? "").split(/\s*[|;]\s*/).map(s => s.trim()).filter(Boolean);
   const fmtBooster = b => b ? `${b.name} +${b.value}` : "";
   const parseBooster = v => { const m = String(v ?? "").trim().match(/^(.+?)\s*\(?\+(\d+)\)?$/); return m ? { name: m[1].trim(), value: Number(m[2]) } : null; };
-  // Colonne del template: intestazione, lettura dal giocatore, scrittura sul giocatore
   const COLS = [
     ["ID", p => p.id, (p, v) => { p.id = String(v); }],
     ["Nome", p => p.name, (p, v) => { p.name = v; }],
@@ -450,25 +419,22 @@
   ];
   const HEAD = COLS.map(c => c[0]);
   const rowOf = p => COLS.map(c => c[1](p));
-
   function legendSheet() {
-    const rows = [["Campo", "Valori ammessi / note"],
+    return [["Campo", "Valori ammessi / note"],
       ["Liste (Posizioni, Abilità)", "Separa i valori con | oppure ;"],
       ["Abilità", "Nome italiano o inglese, come nel foglio Abilità"],
       ["Booster 1 / 2", "Formato: Nome +valore, per esempio Duelli +3"],
       ["Ruolo", Object.keys(C.roles).join(", ")],
-      ["Gruppo", "Titolari, Ballottaggio DC, Panchina"],
+      ["Gruppo", GROUPS.join(", ")],
       ["Tipo carta", "Epic, Big Time, Show Time, Featured, Trending, Highlight"],
       ["Tipo forma", "fissa (Epiche e Big Time) oppure variabile"],
-      ["ID", "Lascia vuoto per una carta nuova: l'app ne crea uno. Con un ID esistente la riga aggiorna quella carta"],
-      ["Riga ESEMPIO", "Le righe il cui Nome inizia con ESEMPIO vengono ignorate: usala come traccia e poi cancellala"],
+      ["ID", "Vuoto = carta nuova. ID esistente = aggiorna quella carta"],
+      ["Riga ESEMPIO", "Le righe il cui Nome inizia con ESEMPIO vengono ignorate"],
       ["Magazzino / Booster", "Se compili questi fogli, i valori importati sostituiscono quelli attuali"],
-      ["Statistiche", "Valori base della carta a livello 1, come su pesdb o nel gioco senza punti progressione"],
-      ["Lv categorie", "Livelli dei punti progressione già spesi in gioco (facoltativo)"]];
-    return rows;
+      ["Statistiche", "Valori base della carta senza punti progressione (pesdb o gioco)"],
+      ["Lv categorie", "Livelli dei punti progressione già spesi (facoltativo)"]];
   }
-  function skillsSheet() { return [["Nome italiano", "Nome inglese", "Tipo"]].concat(Object.keys(SK).map(k => [SK[k].it, k, SK[k].special ? "speciale (non allenabile)" : "allenabile"])); }
-
+  const skillsSheet = () => [["Nome italiano", "Nome inglese", "Tipo"]].concat(Object.keys(SK).map(k => [SK[k].it, k, SK[k].special ? "speciale (non allenabile)" : "allenabile"]));
   function downloadWorkbook(sheets, file) {
     const wb = XLSX.utils.book_new();
     sheets.forEach(([name, aoa]) => { const ws = XLSX.utils.aoa_to_sheet(aoa); ws["!cols"] = aoa[0].map(() => ({ wch: 18 })); XLSX.utils.book_append_sheet(wb, ws, name); });
@@ -484,20 +450,18 @@
       ["Carte", [HEAD].concat(S.players.map(rowOf))],
       ["Magazzino", [["Abilità", "Copie"]].concat(Object.entries(S.stock).map(([k, q]) => [it(k), q]))],
       ["Booster", [["Booster", "Statistiche"]].concat(allBoosterNames().map(n => [n, (S.boosterDefs[n] || []).map(k => C.stats[k]).join(LIST_SEP)]))],
-      ["Abilità", skillsSheet()],
-      ["Legenda", legendSheet()]
-    ], `lab-rosa-${today()}.xlsx`);
+      ["Abilità", skillsSheet()], ["Legenda", legendSheet()]
+    ], `mvk-pes-builder-${today()}.xlsx`);
   }
   function exportCsv() {
     const ws = XLSX.utils.aoa_to_sheet([HEAD].concat(S.players.map(rowOf)));
-    downloadText("﻿" + XLSX.utils.sheet_to_csv(ws, { FS: ";" }), `lab-rosa-carte-${today()}.csv`, "text/csv");
+    downloadText("﻿" + XLSX.utils.sheet_to_csv(ws, { FS: ";" }), `mvk-pes-builder-carte-${today()}.csv`, "text/csv");
   }
   function exportTemplate() {
     const ex = S.players.find(p => p.name === "Alessandro Del Piero") || S.players[0];
     const sample = rowOf(ex); sample[0] = ""; sample[1] = "ESEMPIO " + ex.name;
     downloadWorkbook([["Carte", [HEAD, sample]], ["Magazzino", [["Abilità", "Copie"]]], ["Booster", [["Booster", "Statistiche"]]], ["Abilità", skillsSheet()], ["Legenda", legendSheet()]], "template-import-lab-rosa.xlsx");
   }
-
   function importWorkbook(wb) {
     const rep = { added: [], updated: [], errors: [], stock: 0, boosters: 0 };
     const sheet = wb.Sheets["Carte"] || wb.Sheets[wb.SheetNames[0]];
@@ -513,8 +477,7 @@
       const isNew = !p;
       if (isNew) {
         id = id || ("c-" + (name + "-" + (norm["Pack"] || "")).toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
-        if (player(id)) { p = player(id); }
-        else p = { id, name, group: "Panchina", role: C.defaultRoles[name] || Object.keys(C.roles)[0], status: "", webTier: "", formType: "variabile", weekForm: "", boosters: [], baseSkills: [], extraSkills: [], lockedExtras: [], img: null, build: {}, pointsOverride: null,
+        p = player(id) || { id, name, group: "Panchina", role: C.defaultRoles[name] || Object.keys(C.roles)[0], status: "", webTier: "", formType: "variabile", weekForm: "", boosters: [], baseSkills: [], extraSkills: [], lockedExtras: [], img: null, build: {}, pointsOverride: null,
           card: { pesdbId: "", pesdbUrl: "", pack: "", cardType: "", ovr: null, maxOvr: null, pos: "", positions: [], attStyle: "", defStyle: "", height: null, weight: null, foot: "R", wfUsage: "", wfAcc: "", form: "", injury: "", stats: {}, points: null } };
       }
       const errs = [];
@@ -525,7 +488,7 @@
         const e = set(p, String(v).trim()); if (e) errs.push(e);
       });
       p.boosters = p.boosters.filter(Boolean);
-      if (isNew) {
+      if (isNew && !player(id)) {
         const miss = STAT_KEYS.filter(k => !Number.isFinite(p.card.stats[k]));
         if (miss.length) { rep.errors.push(`Riga ${n} (${name}): mancano ${miss.length} statistiche, carta non importata`); return; }
         S.players.push(p);
@@ -545,57 +508,39 @@
     });
     return rep;
   }
-
   function viewData() {
     const r = S.ui.report;
-    return `<div class="settings">
-    <section><h2 class="sec">Esporta</h2>
-      <p>Il file Excel contiene tutte le carte (statistiche, abilità, booster, build), il magazzino abilità, la libreria booster e una legenda. Si reimporta così com'è.</p>
-      <div class="actions"><button class="btn primary" data-act="exportXlsx">Esporta Excel</button>
-      <button class="btn" data-act="exportCsv">Esporta carte in CSV</button>
-      <button class="btn ghost" data-act="export">Backup completo (.json)</button></div></section>
-    <section><h2 class="sec">Importa</h2>
-      <p>Accetta lo stesso formato dell'export: Excel (.xlsx), CSV con separatore ; o , oppure un backup .json. Le righe con un ID esistente aggiornano quella carta, solo nelle celle compilate. Le righe senza ID diventano carte nuove.</p>
-      <div class="actions"><label class="btn primary">Scegli file da importare<input type="file" accept=".xlsx,.xls,.csv,.json" data-act="importAny" hidden></label>
-      <button class="btn" data-act="template">Scarica template vuoto</button></div>
-      ${r ? `<div class="note"><strong>Import completato.</strong> Nuove: ${r.added.length}${r.added.length ? " (" + esc(r.added.join(", ")) + ")" : ""}. Aggiornate: ${r.updated.length}. Righe magazzino: ${r.stock}. Booster: ${r.boosters}.</div>${r.errors.map(e => `<p class="warn">${esc(e)}</p>`).join("")}` : ""}
-    </section>
-    <section><h2 class="sec">Aggiungere una carta senza AI</h2>
-      <p>1. Scarica il template. 2. Nel foglio Carte compila una riga: nome, tipo carta, stili, piede, punti progressione, le 26 statistiche base e le abilità (nomi come nel foglio Abilità). 3. Importa il file. Le statistiche le prendi da pesdb.net o dalla schermata del giocatore nel gioco.</p></section>
-    <section><h2 class="sec">Ripristina</h2>
-      <div class="actions"><button class="btn ghost" data-act="wipe">Torna ai dati iniziali</button></div></section>
-    </div>`;
+    return `<section class="panel"><h2 class="ptitle">Esporta</h2>
+      <p class="muted">Excel con carte, magazzino, libreria booster, dizionario abilità e legenda. Si reimporta così com'è.</p>
+      <div class="acts"><button class="btn primary" data-act="exportXlsx">Esporta Excel</button><button class="btn" data-act="exportCsv">Carte in CSV</button><button class="btn ghost" data-act="export">Backup .json</button></div></section>
+    <section class="panel"><h2 class="ptitle">Importa</h2>
+      <p class="muted">Excel, CSV (separatore ; o ,) o backup .json. Riga con ID esistente = aggiornamento delle sole celle compilate. Riga senza ID = carta nuova.</p>
+      <div class="acts"><label class="btn primary">Scegli file<input type="file" accept=".xlsx,.xls,.csv,.json" data-act="importAny" hidden></label><button class="btn" data-act="template">Scarica template</button></div>
+      ${r ? `<p class="note">Import completato. Nuove: ${r.added.length}${r.added.length ? " (" + esc(r.added.join(", ")) + ")" : ""}. Aggiornate: ${r.updated.length}. Magazzino: ${r.stock}. Booster: ${r.boosters}.</p>${r.errors.map(e => `<p class="warn">${esc(e)}</p>`).join("")}` : ""}</section>
+    <section class="panel"><h2 class="ptitle">Aggiungere una carta a mano</h2>
+      <p class="muted">Scarica il template, compila una riga nel foglio Carte (nome, tipo, stili, piede, punti, le 26 statistiche base, abilità con i nomi del foglio Abilità) e importalo.</p></section>
+    <section class="panel"><h2 class="ptitle">Ripristina</h2><div class="acts"><button class="btn ghost" data-act="wipe">Torna ai dati iniziali</button></div></section>`;
   }
 
   // ---------- eventi ----------
   function setBuild(p, b) { p.build = b; render(); }
   document.addEventListener("click", e => {
     const t = e.target.closest("[data-act],[data-view]");
-    if (!t) return;
-    if (t.dataset.view) { S.ui.view = t.dataset.view; return render(); }
+    if (!t || t.tagName === "SELECT" || t.tagName === "INPUT" || t.tagName === "DETAILS") return;
+    if (t.dataset.view) { S.ui.view = t.dataset.view; render(); window.scrollTo(0, 0); return; }
     const p = cur(), a = t.dataset.act;
-    if (a === "pick" || a === "goto") { S.ui.playerId = t.dataset.id; S.ui.view = "player"; if (a === "goto") S.ui.tab = "skills"; render(); window.scrollTo(0, 0); }
-    else if (a === "tab") { S.ui.tab = t.dataset.tab; render(); }
+    if (a === "pick" || a === "goto") { const x = player(t.dataset.id); S.ui.playerId = x.id; S.ui.group = x.group; S.ui.view = "player"; render(); if (a === "goto") window.scrollTo(0, 0); }
+    else if (a === "group") { S.ui.group = t.dataset.g; render(); }
+    else if (a === "mode") { S.ui.mode = t.dataset.m; render(); }
     else if (a === "lv") {
-      const k = t.dataset.k, L = (p.build[k] || 0) + Number(t.dataset.d);
-      const b = Object.assign({}, p.build, { [k]: Math.max(0, L) });
-      if (C.categories.reduce((s, c) => s + catCost(b[c.key] || 0), 0) <= totalPoints(p)) setBuild(p, b);
+      const k = t.dataset.k, b = Object.assign({}, p.build, { [k]: Math.max(0, (p.build[k] || 0) + Number(t.dataset.d)) });
+      if (spentOf(b) <= totalPoints(p)) setBuild(p, b);
     }
-    else if (a === "opt") { setBuild(p, optimize(p, !!t.dataset.zero)); toast("Build calcolata"); }
+    else if (a === "opt") { setBuild(p, optimize(p, !!t.dataset.zero)); toast("Build per il ruolo calcolata"); }
     else if (a === "reset") setBuild(p, {});
-    else if (a === "lock") {
-      const k = t.dataset.k; p.lockedExtras = p.lockedExtras || [];
-      p.lockedExtras = p.lockedExtras.includes(k) ? p.lockedExtras.filter(x => x !== k) : p.lockedExtras.concat(k); render();
-    }
-    else if (a === "remove") {
-      const k = p.extraSkills.splice(Number(t.dataset.i), 1)[0];
-      if (S.returnRemoved) S.stock[k] = (S.stock[k] || 0) + 1;
-      toast(`${it(k)} eliminata`); render();
-    }
+    else if (a === "lock") { const k = t.dataset.k; p.lockedExtras = (p.lockedExtras || []).includes(k) ? p.lockedExtras.filter(x => x !== k) : (p.lockedExtras || []).concat(k); render(); }
+    else if (a === "remove") { const k = p.extraSkills.splice(Number(t.dataset.i), 1)[0]; if (S.returnRemoved) S.stock[k] = (S.stock[k] || 0) + 1; toast(`${it(k)} eliminata`); render(); }
     else if (a === "stock") { const k = t.dataset.k; S.stock[k] = Math.max(0, (S.stock[k] || 0) + Number(t.dataset.d)); render(); }
-    else if (a === "export") {
-      downloadText(JSON.stringify(Object.assign({}, S, { ui: undefined }), null, 1), `lab-rosa-${today()}.json`, "application/json");
-    }
     else if (a === "goalParse") {
       const g = goalOf(p), inp = $("[data-act=goalText]"); g.text = inp ? inp.value : g.text;
       const r = parseGoal(g.text);
@@ -607,28 +552,29 @@
     else if (a === "optGoal") {
       const g = goalOf(p);
       setBuild(p, optimize(p, true, goalWeights(p), g.mins));
-      const add = boosterAdds(p), st = trainedStats(p);
-      const miss = Object.entries(g.mins).filter(([k, v]) => v && st[k] + (add[k] || 0) < v).map(([k]) => C.stats[k]);
+      const st = statsFor(p, "build");
+      const miss = Object.entries(g.mins).filter(([k, v]) => v && st[k] < v).map(([k]) => C.stats[k]);
       toast(miss.length ? "Minimi non raggiungibili: " + miss.join(", ") : "Build calcolata per l'obiettivo");
     }
     else if (a === "exportXlsx") exportXlsx();
     else if (a === "exportCsv") exportCsv();
     else if (a === "template") exportTemplate();
+    else if (a === "export") downloadText(JSON.stringify(Object.assign({}, S, { ui: undefined }), null, 1), `mvk-pes-builder-${today()}.json`, "application/json");
     else if (a === "addBooster") { const i = $("[data-act=newBooster]"), n = i && i.value.trim(); if (n) { S.boosterDefs[n] = S.boosterDefs[n] || []; render(); } }
-    else if (a === "wipe") { if (confirm("Ripristinare i dati iniziali? Le modifiche non esportate andranno perse.")) { S = freshState(); render(); } }
+    else if (a === "wipe") { if (confirm("Tornare ai dati iniziali? Le modifiche non esportate andranno perse.")) { S = freshState(); render(); } }
   });
+  document.addEventListener("toggle", e => { if (e.target.dataset && e.target.dataset.act === "goalToggle") S.ui.openGoal = e.target.open; }, true);
   document.addEventListener("change", e => {
     const t = e.target, a = t.dataset.act; if (!a) return;
     const p = cur();
     if (a === "role") { p.role = t.value; render(); }
-    else if (a === "group") { p.group = t.value; render(); }
+    else if (a === "setGroup") { p.group = t.value; S.ui.group = t.value; render(); }
     else if (a === "form") { p.weekForm = t.value; render(); }
-    else if (a === "pickSel") { S.ui.playerId = t.value; render(); }
     else if (a === "points") { const v = t.value === "" ? null : Math.max(0, Number(t.value)); p.pointsOverride = v; if (v != null && spent(p) > v) p.build = {}; render(); }
     else if (a === "bdef") {
       const b = t.dataset.b, k = t.dataset.k, l = new Set(S.boosterDefs[b] || []);
       t.checked ? l.add(k) : l.delete(k); S.boosterDefs[b] = [...l]; render();
-      const d = document.querySelectorAll(".booster details"); d.forEach(x => { if (x.textContent.includes(b)) x.open = true; });
+      document.querySelectorAll("details").forEach(x => { const s = x.querySelector("summary"); if (s && s.textContent.startsWith(b + ":")) x.open = true; });
     }
     else if (a === "add" || a === "replace") {
       const k = t.value; if (!k) return;
@@ -637,11 +583,17 @@
       S.stock[k] = Math.max(0, (S.stock[k] || 0) - 1);
       toast(`${it(k)} assegnata a ${p.name}`); render();
     }
-    else if (a === "goalText") { goalOf(p).text = t.value; }
+    else if (a === "goalText") goalOf(p).text = t.value;
     else if (a === "goalW") { goalOf(p).weights[t.dataset.k] = Number(t.value); render(); }
-    else if (a === "goalMin") { const g = goalOf(p); const v = Number(t.value); if (v > 0) g.mins[t.dataset.k] = v; else delete g.mins[t.dataset.k]; render(); }
-    else if (a === "goalAdd") { if (t.value) { goalOf(p).weights[t.value] = 2; render(); } }
+    else if (a === "goalMin") { const g = goalOf(p), v = Number(t.value); if (v > 0) g.mins[t.dataset.k] = v; else delete g.mins[t.dataset.k]; render(); }
+    else if (a === "goalAdd") { if (t.value) { goalOf(p).weights[t.value] = 2; S.ui.openGoal = true; render(); } }
     else if (a === "goalBlend") { goalOf(p).blend = t.checked; render(); }
+    else if (a === "mgrOn") { S.manager.on = t.checked; if (!t.checked && S.ui.mode === "mgr") S.ui.mode = "build"; render(); }
+    else if (a === "mgrName") { S.manager.name = t.value || "Allenatore"; render(); }
+    else if (a === "mgrPct") { S.manager.pct = Math.max(0, Number(t.value) || 0); render(); }
+    else if (a === "mgrAdd") { if (t.checked) S.manager.add[t.dataset.k] = 1; else delete S.manager.add[t.dataset.k]; render(); }
+    else if (a === "captain") { S.captainId = t.value; render(); }
+    else if (a === "returnRemoved") { S.returnRemoved = t.checked; render(); }
     else if (a === "importAny") {
       const f = t.files[0]; if (!f) return;
       const done = rep => { S.ui.report = rep; render(); toast("Import completato"); };
@@ -649,25 +601,16 @@
         f.text().then(txt => {
           const d = JSON.parse(txt);
           if (!Array.isArray(d.players) || !d.stock) throw new Error("formato");
-          d.ui = { view: "data", playerId: d.players[0].id, tab: "build", q: "" };
-          S = d; done({ added: [], updated: d.players.map(x => x.name), errors: [], stock: Object.keys(d.stock).length, boosters: Object.keys(d.boosterDefs || {}).length });
+          d.ui = { view: "data", playerId: d.players[0].id };
+          S = migrate(d); done({ added: [], updated: d.players.map(x => x.name), errors: [], stock: Object.keys(d.stock).length, boosters: Object.keys(d.boosterDefs || {}).length });
         }).catch(() => toast("File .json non valido: serve un backup di questa app"));
       } else {
         f.arrayBuffer().then(buf => {
-          const csv = /\.csv$/i.test(f.name);
-          const wb = csv ? XLSX.read(new TextDecoder("utf-8").decode(buf).replace(/^\ufeff/, ""), { type: "string" }) : XLSX.read(buf, { type: "array" });
+          const wb = /\.csv$/i.test(f.name) ? XLSX.read(new TextDecoder("utf-8").decode(buf).replace(/^﻿/, ""), { type: "string" }) : XLSX.read(buf, { type: "array" });
           done(importWorkbook(wb));
         }).catch(err => toast("File non leggibile: " + err.message));
       }
       t.value = "";
-    }
-    else if (a === "captain") { S.captainId = t.value; render(); }
-    else if (a === "returnRemoved") { S.returnRemoved = t.checked; render(); }
-  });
-  document.addEventListener("input", e => {
-    if (e.target.dataset.act === "search") {
-      S.ui.q = e.target.value; renderRoster();
-      const s = $(".search"); s.focus(); s.setSelectionRange(s.value.length, s.value.length);
     }
   });
 

@@ -10,23 +10,23 @@ window.CONFIG = {
     "Lofted Pass": "Passaggio alto",
     "Finishing": "Finalizzazione",
     "Heading": "Colpo di testa",
-    "Set Piece Taking": "Calci piazzati",
-    "Curl": "Effetto",
+    "Set Piece Taking": "Calci da fermo",
+    "Curl": "Tiro a giro",
     "Defensive Awareness": "Comportamento difensivo",
     "Tackling": "Contrasto",
     "Aggression": "Aggressività",
     "Defensive Engagement": "Coinvolgimento difensivo",
     "GK Awareness": "Comportamento PT",
     "GK Catching": "Presa PT",
-    "GK Parrying": "Respinta PT",
+    "GK Parrying": "Parata PT",
     "GK Reflexes": "Riflessi PT",
     "GK Reach": "Estensione PT",
     "Speed": "Velocità",
     "Acceleration": "Accelerazione",
     "Kicking Power": "Potenza di tiro",
-    "Jumping": "Elevazione",
+    "Jumping": "Salto",
     "Physical Contact": "Contatto fisico",
-    "Balance": "Equilibrio",
+    "Balance": "Controllo corpo",
     "Stamina": "Resistenza"
   },
   statGroups: [
@@ -36,22 +36,32 @@ window.CONFIG = {
     { name: "Portiere", stats: ["GK Awareness", "GK Catching", "GK Parrying", "GK Reflexes", "GK Reach"] }
   ],
 
-  // Categorie dei punti progressione. DA VERIFICARE in gioco alla prima build.
+  // Categorie dei punti progressione. Verificate il 9/10/2026 su Conceição (build 9/3/8/8/10 = 60 punti, tutte le statistiche coincidono).
   categories: [
-    { key: "shooting", name: "Tiro", stats: ["Finishing", "Set Piece Taking", "Curl"] },
-    { key: "passing", name: "Passaggio", stats: ["Low Pass", "Lofted Pass"] },
-    { key: "dribbling", name: "Dribbling", stats: ["Ball Control", "Dribbling", "Tight Possession"] },
-    { key: "dexterity", name: "Destrezza", stats: ["Attacking Awareness", "Acceleration", "Balance"] },
-    { key: "lowerBody", name: "Forza arti inferiori", stats: ["Speed", "Kicking Power", "Stamina"] },
-    { key: "aerial", name: "Forza aerea", stats: ["Heading", "Jumping", "Physical Contact"] },
-    { key: "defending", name: "Difesa", stats: ["Defensive Awareness", "Tackling", "Aggression", "Defensive Engagement"] },
-    { key: "gk1", name: "Portiere 1", stats: ["GK Awareness"] },
-    { key: "gk2", name: "Portiere 2", stats: ["GK Catching", "GK Parrying"] },
-    { key: "gk3", name: "Portiere 3", stats: ["GK Reflexes", "GK Reach"] }
+    { key: "shooting", name: "Tiro", short: "TIR", stats: ["Finishing", "Set Piece Taking", "Curl"] },
+    { key: "passing", short: "PAS", name: "Passaggio", stats: ["Low Pass", "Lofted Pass"] },
+    { key: "dribbling", short: "DRI", name: "Dribbling", stats: ["Ball Control", "Dribbling", "Tight Possession"] },
+    { key: "dexterity", short: "DES", name: "Destrezza", stats: ["Attacking Awareness", "Acceleration", "Balance"] },
+    { key: "lowerBody", short: "GAM", name: "Forza arti inferiori", stats: ["Speed", "Kicking Power", "Stamina"] },
+    { key: "aerial", short: "AER", name: "Forza aerea", stats: ["Heading", "Jumping", "Physical Contact"] },
+    { key: "defending", short: "DIF", name: "Difesa", stats: ["Defensive Awareness", "Tackling", "Aggression", "Defensive Engagement"] },
+    { key: "gk1", short: "PT1", name: "Portiere 1", stats: ["GK Awareness"] },
+    { key: "gk2", short: "PT2", name: "Portiere 2", stats: ["GK Catching", "GK Parrying"] },
+    { key: "gk3", short: "PT3", name: "Portiere 3", stats: ["GK Reflexes", "GK Reach"] }
   ],
   // Costo del livello n: livelli 1-4 = 1 punto, 5-8 = 2, 9-12 = 3, e così via.
   levelBlock: 4,
   statCap: 99,
+
+  // Statistiche alzate dai booster. Verificate in gioco: Gestione del pallone e Calci di punizione (Conceição).
+  // Le altre si aggiungono da Impostazioni > Libreria booster.
+  boosterDefsSeed: {
+    "Gestione del pallone": ["Dribbling", "Tight Possession", "Speed", "Balance"],
+    "Calci di punizione": ["Finishing", "Set Piece Taking", "Curl", "Kicking Power"]
+  },
+  // Allenatore: booster fissi + bonus percentuale di competenza sullo stile di gioco.
+  // Calibrato su Conte con Conceição: +3% arrotondato (floor(v*0.03+0.45)), 22 statistiche su 22 coincidono.
+  managerDefault: { on: true, name: "Antonio Conte", pct: 3, add: { "Defensive Awareness": 1, "Kicking Power": 1 } },
 
   // Profili di ruolo: pesi delle statistiche (per l'ottimizzatore) e abilità prioritarie (per il gestore).
   // I pesi sono una base di partenza ragionata, non dati ufficiali.
@@ -137,7 +147,7 @@ window.CONFIG = {
     { re: "lanci|lancio|cross", w: { "Lofted Pass": 3, "Curl": 1 } },
     { re: "testa|aere|colpo di testa|palle alte", w: { "Heading": 3, "Jumping": 3, "Physical Contact": 2 } },
     { re: "fisic|forza|contatto|spalla", w: { "Physical Contact": 3, "Balance": 2 } },
-    { re: "equilibrio|stabilit", w: { "Balance": 3 } },
+    { re: "equilibrio|stabilit|controllo corpo", w: { "Balance": 3 } },
     { re: "resisten|fiato|stamina|corsa|box.to.box", w: { "Stamina": 3 } },
     { re: "inseriment|smarcament|movimento|senza palla|istinto", w: { "Attacking Awareness": 3, "Acceleration": 1 } },
     { re: "difes|marcatur|copertura", w: { "Defensive Awareness": 3, "Defensive Engagement": 3, "Tackling": 2 } },

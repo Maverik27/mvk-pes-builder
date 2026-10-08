@@ -1,4 +1,4 @@
-# Lab Rosa eFootball
+# MVK PES Builder
 
 App statica per gestire la mia rosa eFootball: simulatore di build (punti progressione) e gestore delle abilità extra con magazzino delle abilità salvate.
 Nessun server, nessuna dipendenza: HTML, CSS e JavaScript.
@@ -34,9 +34,13 @@ Le modifiche restano nel `localStorage` del browser. Fai export (Excel o backup 
 ## Librerie
 `lib/xlsx.mini.min.js`: SheetJS Community Edition 0.20.3 (Apache 2.0, licenza in `lib/`). Inclusa nel repo, quindi l'app funziona anche offline.
 
+## Regole verificate in gioco
+- Costo livelli e statistiche per categoria: verificati su Conceição (build 9/3/8/8/10 = 60 punti, tutte le statistiche coincidono con efootballhub).
+- Booster verificati: Gestione del pallone, Calci di punizione. Gli altri si impostano in Impostazioni → Libreria booster.
+- Allenatore (Conte): +1 Comportamento difensivo, +1 Potenza di tiro, poi +3% arrotondato. 22 statistiche su 22 coincidono.
+
 ## Da verificare in gioco
-- Quali statistiche alza ogni categoria di progressione e il costo dei livelli (`data/config.js`).
-- Le statistiche alzate da ogni booster: si impostano una volta nell'app (tab Build e booster).
+- Le statistiche degli altri booster.
 - Punti progressione di Luis Suárez (pesdb non li riporta).
 - Versione esatta della carta di Virgil van Dijk.
 

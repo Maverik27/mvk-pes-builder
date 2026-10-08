@@ -2641,7 +2641,13 @@ window.SEED = {
     "Outside Curler",
     "Track Back"
    ],
-   "extraSkills": [],
+   "extraSkills": [
+    "One-touch Pass",
+    "Through Passing",
+    "Long-range Shooting",
+    "First-time Shot",
+    "Fighting Spirit"
+   ],
    "lockedExtras": [],
    "img": "img/106799193796011.webp",
    "card": {
@@ -2697,7 +2703,13 @@ window.SEED = {
     },
     "points": 60
    },
-   "build": {}
+   "build": {
+    "shooting": 9,
+    "passing": 3,
+    "dribbling": 8,
+    "dexterity": 8,
+    "lowerBody": 10
+   }
   },
   {
    "id": "88033139363502",

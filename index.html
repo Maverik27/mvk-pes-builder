@@ -2,27 +2,27 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lab Rosa eFootball</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1320">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>MVK PES Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header class="topbar">
-  <h1 class="brand">Lab Rosa</h1>
-  <nav class="topnav" aria-label="Sezioni">
-    <button data-view="player" class="navbtn">Giocatori</button>
-    <button data-view="stock" class="navbtn">Magazzino abilità</button>
-    <button data-view="data" class="navbtn">Dati</button>
-    <button data-view="settings" class="navbtn">Impostazioni</button>
+  <h1 class="brand">MVK <span>Builder</span></h1>
+  <nav class="nav" aria-label="Sezioni">
+    <button data-view="player"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5Z"/></svg><span>Giocatori</span></button>
+    <button data-view="stock"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v3H4zm0 5h16v3H4zm0 5h16v3H4z"/></svg><span>Abilità</span></button>
+    <button data-view="data"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 7 8h3v6h4V8h3l-5-5ZM5 18v2h14v-2H5Z"/></svg><span>Dati</span></button>
+    <button data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L15 3.5h-4L10.7 6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg><span>Impostazioni</span></button>
   </nav>
 </header>
-<div class="layout">
-  <aside class="roster" id="roster" aria-label="Rosa"></aside>
-  <main id="main" class="main"></main>
-</div>
+<main id="main" class="main"></main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script src="lib/xlsx.mini.min.js"></script>
 <script src="data/config.js"></script>
