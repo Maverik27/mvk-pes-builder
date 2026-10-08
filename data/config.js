@@ -62,8 +62,10 @@ window.CONFIG = {
   // Stili di gioco di squadra (ordine come su efootballhub)
   teamStyles: ["Possesso palla", "Contrattacco", "Contropiede veloce", "Passaggio lungo", "Vie laterali", "Pressing totale"],
   // Bonus alle statistiche in base alla competenza dell'allenatore nello stile scelto.
-  // Dato verificato: Conte, Contropiede veloce 90 -> +3% (22 statistiche su 22). Le altre soglie sono da verificare.
-  proficiencyBoost: [{ min: 89, pct: 3 }],
+  // Verificato su Conceição: Conte (Contropiede veloce 90) e Koeman (88) danno entrambi +3%.
+  // Formula: bonus = floor((valore prima dei booster allenatore * 3 + 45) / 100), poi +1 dei booster allenatore.
+  // Sotto 88 non ancora verificato.
+  proficiencyBoost: [{ min: 88, pct: 3 }],
   // Allenatori della rosa (da efootballhub, 9/10/2026). prof = competenza per stile, nello stesso ordine di teamStyles.
   managers: [
     { id: "conte", name: "Antonio Conte", add: { "Defensive Awareness": 1, "Kicking Power": 1 }, prof: [68, 73, 90, 68, 89, 69],

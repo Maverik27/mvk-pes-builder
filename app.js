@@ -97,7 +97,7 @@
     const tr0 = trainedStats(p, build), add = boosterAdds(p), m = activeMgr();
     STAT_KEYS.forEach(k => {
       let v = tr0[k] + (add[k] || 0);
-      if (mode === "mgr" && m) { v += (m.add[k] || 0); v += Math.floor(v * m.pct / 100 + 0.45); }
+      if (mode === "mgr" && m) { const bonus = Math.floor((v * m.pct + 45) / 100); v += (m.add[k] || 0) + bonus; }
       out[k] = v;
     });
     return out;
