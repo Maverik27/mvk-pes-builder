@@ -28,6 +28,10 @@
       const sp = SEED.players.find(p => p.name.startsWith("Francisco")), p = sp && s.players.find(x => x.id === sp.id);
       if (p) { if (!Object.keys(p.build || {}).length) p.build = Object.assign({}, sp.build); if (!(p.extraSkills || []).length) p.extraSkills = sp.extraSkills.slice(); }
     });
+    once("gattuso-build-v1", () => {
+      const sp = SEED.players.find(p => p.name === "Gennaro Gattuso"), p = sp && s.players.find(x => x.id === sp.id);
+      if (p && !Object.keys(p.build || {}).length) p.build = Object.assign({}, sp.build);
+    });
     once("managers-v1", () => {
       s.managers = JSON.parse(JSON.stringify(C.managers));
       s.mgrId = "conte"; s.teamStyle = "Contropiede veloce"; s.mgrOn = s.manager ? s.manager.on !== false : true;
@@ -95,10 +99,12 @@
     const out = {};
     if (mode === "base") { STAT_KEYS.forEach(k => out[k] = p.card.stats[k]); return out; }
     const tr0 = trainedStats(p, build), add = boosterAdds(p), m = activeMgr();
+    // Modello verificato su 3 schermate (Conceição con Conte e Koeman, Gattuso con Conte):
+    // bonus competenza = floor(valore allenato * pct%), tetto 99 su allenato + bonus, poi booster carta e booster allenatore oltre il tetto
     STAT_KEYS.forEach(k => {
-      let v = tr0[k] + (add[k] || 0);
-      if (mode === "mgr" && m) { const bonus = Math.floor((v * m.pct + 45) / 100); v += (m.add[k] || 0) + bonus; }
-      out[k] = v;
+      let v = tr0[k];
+      if (mode === "mgr" && m) v = Math.min(C.statCap, v + Math.floor(v * Math.round(m.pct * 10) / 1000));
+      out[k] = v + (add[k] || 0) + (mode === "mgr" && m ? (m.add[k] || 0) : 0);
     });
     return out;
   }
@@ -259,7 +265,7 @@
         <option value="" ${S.mgrOn ? "" : "selected"}>Nessuno</option>
         ${S.managers.map(x => `<option value="${x.id}" ${S.mgrOn && x.id === S.mgrId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
       <label class="mgrsel"><span>Stile di squadra</span><select data-act="teamStyle" aria-label="Stile di squadra">${C.teamStyles.map(t => `<option ${t === S.teamStyle ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-      ${m ? `<div class="mgrfx">${Object.entries(m.add).map(([k, v]) => `<span class="pill">${esc(C.stats[k])} +${v}</span>`).join("")}<span class="pill ${m.pct ? "ok" : "ko"}">Competenza ${m.prof}${m.pct ? ` → +${m.pct}%` : " → nessun bonus"}</span></div>` : ""}
+      ${m ? `<div class="mgrfx">${Object.entries(m.add).map(([k, v]) => `<span class="pill">${esc(C.stats[k])} +${v}</span>`).join("")}<span class="pill ${m.pct ? "ok" : "ko"}">Competenza ${m.prof}${m.pct ? ` → +${String(m.pct).replace(".", ",")}%` : " → nessun bonus"}</span></div>` : ""}
     </div>`;
   }
 

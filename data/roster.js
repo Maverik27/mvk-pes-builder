@@ -1171,7 +1171,14 @@ window.SEED = {
     },
     "points": 68
    },
-   "build": {}
+   "build": {
+    "passing": 8,
+    "dribbling": 4,
+    "dexterity": 4,
+    "lowerBody": 8,
+    "aerial": 8,
+    "defending": 12
+   }
   },
   {
    "id": "106788187843931",

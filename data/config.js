@@ -53,19 +53,20 @@ window.CONFIG = {
   levelBlock: 4,
   statCap: 99,
 
-  // Statistiche alzate dai booster. Verificate in gioco: Gestione del pallone e Calci di punizione (Conceição).
+  // Statistiche alzate dai booster. Verificate in gioco: Gestione del pallone, Calci di punizione (Conceição), Duelli (Gattuso).
   // Le altre si aggiungono da Impostazioni > Libreria booster.
   boosterDefsSeed: {
     "Gestione del pallone": ["Dribbling", "Tight Possession", "Speed", "Balance"],
-    "Calci di punizione": ["Finishing", "Set Piece Taking", "Curl", "Kicking Power"]
+    "Calci di punizione": ["Finishing", "Set Piece Taking", "Curl", "Kicking Power"],
+    "Duelli": ["Defensive Awareness", "Tackling", "Speed", "Stamina"]
   },
   // Stili di gioco di squadra (ordine come su efootballhub)
   teamStyles: ["Possesso palla", "Contrattacco", "Contropiede veloce", "Passaggio lungo", "Vie laterali", "Pressing totale"],
   // Bonus alle statistiche in base alla competenza dell'allenatore nello stile scelto.
-  // Verificato su Conceição: Conte (Contropiede veloce 90) e Koeman (88) danno entrambi +3%.
-  // Formula: bonus = floor((valore prima dei booster allenatore * 3 + 45) / 100), poi +1 dei booster allenatore.
+  // Verificato su 3 schermate efootballhub (Conceição con Conte 90 e Koeman 88, Gattuso con Conte):
+  // bonus = floor(valore allenato * 3,6%), tetto 99 su allenato + bonus, poi booster carta e allenatore.
   // Sotto 88 non ancora verificato.
-  proficiencyBoost: [{ min: 88, pct: 3 }],
+  proficiencyBoost: [{ min: 88, pct: 3.6 }],
   // Allenatori della rosa (da efootballhub, 9/10/2026). prof = competenza per stile, nello stesso ordine di teamStyles.
   managers: [
     { id: "conte", name: "Antonio Conte", add: { "Defensive Awareness": 1, "Kicking Power": 1 }, prof: [68, 73, 90, 68, 89, 69],
