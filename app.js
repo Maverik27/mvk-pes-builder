@@ -299,7 +299,7 @@
     h += `<section class="panel">
       <div class="shead"><div class="seg small" role="tablist" aria-label="Valori mostrati">
         ${[["base", "Carta"], ["build", "Build"], ["mgr", m ? "+ " + m.name.split(" ").pop() : "+ allenatore"]].map(([k, l]) => `<button role="tab" data-act="mode" data-m="${k}" aria-selected="${mode === k}" ${k === "mgr" && !m ? "disabled" : ""}>${esc(l)}</button>`).join("")}</div>
-        <div class="score"><b>${score.toFixed(1)}</b> indice ruolo${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
+        <div class="score" title="Media pesata delle statistiche che contano per il ruolo scelto. Non è l'overall del gioco."><b>${score.toFixed(1)}</b> punteggio ruolo (non è l'overall)${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
       <div class="scols">${cols.map(col => `<div class="scol">${col.s.map(k => {
         const v = st[k], d = v - base[k];
         return `<div class="srow ${band(v)}"><span class="sl">${esc(C.stats[k])}</span>${gk.includes(k) ? `<i class="dot" title="nel tuo obiettivo"></i>` : ""}${d > 0 ? `<small>+${d}</small>` : ""}<b class="badge ${band(v)}">${v}</b></div>`;
@@ -435,7 +435,7 @@
       <div class="ctrls"><input type="text" data-act="newBooster" placeholder="Nome nuovo booster" aria-label="Nome nuovo booster"><button class="btn small" data-act="addBooster">Aggiungi</button></div></section>
     <section class="panel"><h2 class="ptitle">Abilità tolte</h2>
       <label class="chk"><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
-    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610090135. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
+    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610090144. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
     <section class="panel"><h2 class="ptitle">Regole di progressione</h2>
       <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto ${C.statCap}. Verificate in gioco su Conceição.</p>
       <table class="rules">${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</table></section>`;
