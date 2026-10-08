@@ -6,6 +6,7 @@
   const STAT_KEYS = Object.keys(C.stats);
   const MAX_EXTRA = 5;
   const GROUPS = ["Titolari", "Ballottaggio DC", "Panchina"];
+  const TABS = [["build", "Build"], ["skills", "Abilità"], ["goal", "Obiettivo"], ["card", "Scheda"]];
 
   // ---------- stato ----------
   function freshState() {
@@ -14,28 +15,45 @@
     s.boosterDefs = {};
     s.captainId = (s.players.find(p => p.name === "Oliver Kahn") || {}).id || null;
     s.returnRemoved = false;
-    s.ui = { view: "player", playerId: s.players[0].id, group: "Titolari" };
+    s.ui = {};
     return migrate(s);
   }
-  // Aggiorna i dati salvati nel browser quando l'app introduce nuove informazioni
+  // Aggiornamenti dei dati salvati nel browser, ognuno applicato una sola volta
   function migrate(s) {
+    s.mig = s.mig || [];
+    const once = (id, fn) => { if (!s.mig.includes(id)) { fn(); s.mig.push(id); } };
     s.boosterDefs = s.boosterDefs || {};
     Object.entries(C.boosterDefsSeed || {}).forEach(([n, st]) => { if (!(s.boosterDefs[n] || []).length) s.boosterDefs[n] = st.slice(); });
-    if (!s.manager) s.manager = JSON.parse(JSON.stringify(C.managerDefault));
-    const seedById = {}; SEED.players.forEach(p => seedById[p.id] = p);
-    s.players.forEach(p => {
-      const sp = seedById[p.id];
-      if (sp && sp.build && Object.keys(sp.build).length && !Object.keys(p.build || {}).length) p.build = Object.assign({}, sp.build);
-      if (sp && sp.extraSkills.length && !(p.extraSkills || []).length) p.extraSkills = sp.extraSkills.slice();
+    once("conceicao-build-v1", () => {
+      const sp = SEED.players.find(p => p.name.startsWith("Francisco")), p = sp && s.players.find(x => x.id === sp.id);
+      if (p) { if (!Object.keys(p.build || {}).length) p.build = Object.assign({}, sp.build); if (!(p.extraSkills || []).length) p.extraSkills = sp.extraSkills.slice(); }
     });
-    s.ui = Object.assign({ view: "player", playerId: s.players[0].id, group: "Titolari", mode: "mgr", openGoal: false }, s.ui || {});
+    once("managers-v1", () => {
+      s.managers = JSON.parse(JSON.stringify(C.managers));
+      s.mgrId = "conte"; s.teamStyle = "Contropiede veloce"; s.mgrOn = s.manager ? s.manager.on !== false : true;
+      delete s.manager;
+    });
+    s.ui = Object.assign({ view: "player", playerId: s.players[0].id, tab: "build", mode: "mgr", sheet: null, q: "" }, s.ui || {});
     if (!["player", "stock", "data", "settings"].includes(s.ui.view)) s.ui.view = "player";
+    if (!TABS.some(t => t[0] === s.ui.tab)) s.ui.tab = "build";
+    s.ui.sheet = null;
     return s;
   }
   let S;
   try { const raw = JSON.parse(localStorage.getItem(KEY)); S = raw ? migrate(raw) : freshState(); } catch (e) { S = freshState(); }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage non disponibile */ } }
 
+  // Allenatore attivo: booster fissi + bonus da competenza nello stile di squadra scelto
+  function mgrInfo(m) {
+    const i = C.teamStyles.indexOf(S.teamStyle), prof = m && i >= 0 ? m.prof[i] : 0;
+    const rule = C.proficiencyBoost.slice().sort((a, b) => b.min - a.min).find(r => prof >= r.min);
+    return { prof, pct: rule ? rule.pct : 0 };
+  }
+  function activeMgr() {
+    if (!S.mgrOn) return null;
+    const m = S.managers.find(x => x.id === S.mgrId); if (!m) return null;
+    return Object.assign({ name: m.name, add: m.add }, mgrInfo(m));
+  }
   // ---------- utilità ----------
   const $ = (sel, el = document) => el.querySelector(sel);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -76,10 +94,10 @@
   function statsFor(p, mode = S.ui.mode, build = p.build) {
     const out = {};
     if (mode === "base") { STAT_KEYS.forEach(k => out[k] = p.card.stats[k]); return out; }
-    const tr0 = trainedStats(p, build), add = boosterAdds(p), m = S.manager;
+    const tr0 = trainedStats(p, build), add = boosterAdds(p), m = activeMgr();
     STAT_KEYS.forEach(k => {
       let v = tr0[k] + (add[k] || 0);
-      if (mode === "mgr" && m && m.on) { v += (m.add[k] || 0); v += Math.floor(v * m.pct / 100 + 0.45); }
+      if (mode === "mgr" && m) { v += (m.add[k] || 0); v += Math.floor(v * m.pct / 100 + 0.45); }
       out[k] = v;
     });
     return out;
@@ -172,179 +190,223 @@
     if (S.ui.view === "stock") m.innerHTML = viewStock();
     else if (S.ui.view === "settings") m.innerHTML = viewSettings();
     else if (S.ui.view === "data") m.innerHTML = viewData();
-    else m.innerHTML = viewPicker() + viewPlayer(cur());
+    else m.innerHTML = viewPlayer(cur());
+    renderSheet();
     save();
   }
 
-  function viewPicker() {
-    const list = S.players.filter(p => p.group === S.ui.group);
-    return `<section class="picker" aria-label="Scegli giocatore">
-      <div class="seg" role="tablist">${GROUPS.map(g => `<button role="tab" data-act="group" data-g="${g}" aria-selected="${g === S.ui.group}">${g} <span>${S.players.filter(p => p.group === g).length}</span></button>`).join("")}</div>
-      <div class="strip">${list.map(p => `<button class="thumb" data-act="pick" data-id="${p.id}" aria-current="${p.id === S.ui.playerId}" title="${esc(p.name)}">
-        ${p.img ? `<img src="${p.img}" alt="" loading="lazy">` : `<span class="noimg">${esc(p.name.split(" ").pop())}</span>`}
-        <span class="tn">${esc(p.name.split(" ").pop())}</span>${p.weekForm ? `<span class="tf f${esc(p.weekForm)}">${esc(p.weekForm)}</span>` : ""}</button>`).join("")}</div>
-    </section>`;
+  // Scheda in basso (bottom sheet) per scelte lunghe: giocatore, slot abilità
+  function renderSheet() {
+    const el = $("#sheet"), s = S.ui.sheet;
+    if (!s) { el.hidden = true; el.innerHTML = ""; document.body.classList.remove("noscroll"); return; }
+    el.hidden = false; document.body.classList.add("noscroll");
+    el.innerHTML = `<div class="sheet-bg" data-act="closeSheet"></div><div class="sheet" role="dialog" aria-modal="true">${s.type === "players" ? sheetPlayers() : sheetSlot(cur(), s.i)}</div>`;
+    const f = el.querySelector("[data-autofocus]"); if (f) f.focus();
+  }
+  function sheetPlayers() {
+    const q = (S.ui.q || "").toLowerCase();
+    let h = `<div class="sh-head"><h3>Scegli giocatore</h3><button class="x" data-act="closeSheet" aria-label="Chiudi">×</button></div>
+      <input type="search" class="search" placeholder="Cerca per nome" value="${esc(S.ui.q)}" data-act="search" aria-label="Cerca giocatore">`;
+    GROUPS.forEach(g => {
+      const list = S.players.filter(p => p.group === g && p.name.toLowerCase().includes(q));
+      if (!list.length) return;
+      h += `<h4>${g}</h4><div class="plist">${list.map(p => `<button class="prow" data-act="pick" data-id="${p.id}" aria-current="${p.id === S.ui.playerId}">
+        ${p.img ? `<img src="${p.img}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
+        <span class="pinfo"><b>${esc(p.name)}</b><small>${esc(p.role)}</small></span>
+        ${p.weekForm ? `<span class="tf f${esc(p.weekForm)}">${esc(p.weekForm)}</span>` : ""}</button>`).join("")}</div>`;
+    });
+    return h;
+  }
+  function sheetSlot(p, i) {
+    const k = p.extraSkills[i], role = C.roles[p.role], own = owned(p);
+    const avail = Object.entries(S.stock).filter(([s, q]) => q > 0 && !own.has(s));
+    const rec = avail.filter(([s]) => role.skills.includes(s)), other = avail.filter(([s]) => !role.skills.includes(s));
+    const opt = ([s, q]) => `<button class="opt" data-act="pickSkill" data-k="${esc(s)}"><span>${esc(it(s))}</span><small>${q} in magazzino</small></button>`;
+    let h = `<div class="sh-head"><h3>${k ? esc(it(k)) : `Slot ${i + 1} libero`}</h3><button class="x" data-act="closeSheet" aria-label="Chiudi">×</button></div>`;
+    if (k) {
+      const locked = (p.lockedExtras || []).includes(k);
+      h += `<div class="acts"><button class="btn" data-act="lock" data-k="${esc(k)}">${locked ? "Sblocca" : "Blocca (la tengo)"}</button>${locked ? "" : `<button class="btn danger" data-act="remove" data-i="${i}">Elimina</button>`}</div>`;
+      if (locked) return h + `<p class="muted">Abilità bloccata: sbloccala per sostituirla.</p>`;
+      h += `<p class="muted">Oppure sostituiscila con:</p>`;
+    }
+    if (!avail.length) return h + `<p class="muted">Magazzino vuoto: aggiungi copie nella sezione Abilità.</p>`;
+    if (rec.length) h += `<h4>Consigliate per ${esc(p.role)}</h4><div class="opts">${rec.map(opt).join("")}</div>`;
+    if (other.length) h += `<h4>Altre in magazzino</h4><div class="opts">${other.sort((a, b) => it(a[0]).localeCompare(it(b[0]))).map(opt).join("")}</div>`;
+    return h;
   }
 
   function viewPlayer(p) {
-    return viewHero(p) + viewBuildBar(p) + viewStats(p) + viewGoal(p) + viewSkills(p) + viewBoosterDefs(p);
+    const idx = S.players.indexOf(p), n = S.players.length;
+    const prev = S.players[(idx - 1 + n) % n], next = S.players[(idx + 1) % n];
+    const tab = S.ui.tab;
+    const head = `<div class="phead">
+      <button class="nav-arrow" data-act="pick" data-id="${prev.id}" aria-label="Giocatore precedente: ${esc(prev.name)}">‹</button>
+      <button class="who-btn" data-act="openPlayers" aria-label="Cambia giocatore">
+        ${p.img ? `<img src="${p.img}" alt="">` : `<span class="noimg"></span>`}
+        <span class="who-txt"><b>${esc(p.name)}</b><small><span class="st att">${esc(tr(STYLE, p.card.attStyle))}</span> <span class="st def">${esc(tr(STYLE, p.card.defStyle))}</span></small></span>
+        <span class="chev">▾</span></button>
+      <button class="nav-arrow" data-act="pick" data-id="${next.id}" aria-label="Giocatore successivo: ${esc(next.name)}">›</button>
+    </div>
+    <div class="ptabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-act="tab" data-t="${k}" aria-selected="${tab === k}">${l}${k === "goal" && goalKeys(p).length ? " •" : ""}</button>`).join("")}</div>`;
+    const body = tab === "skills" ? viewSkills(p) : tab === "goal" ? viewGoal(p) : tab === "card" ? viewCard(p) : viewBuild(p);
+    return `<div class="sticky">${head}</div>${body}`;
   }
 
-  function viewHero(p) {
-    const c = p.card, m = S.manager;
-    const forms = ["", "A", "B", "C", "D", "E"];
-    return `<section class="panel hero">
-      <div class="hhead">
-        <div><h2 class="pname">${esc(p.name)}</h2>
-          <div class="styles"><span class="st att">${esc(tr(STYLE, c.attStyle))}</span><span class="st def">${esc(tr(STYLE, c.defStyle))}</span></div></div>
-        <div class="tag">${esc(c.cardType)}<br><small>${esc(c.pack)}</small></div>
-      </div>
-      <div class="hgrid">
-        <div class="cardimg">${p.img ? `<img src="${p.img}" alt="Carta di ${esc(p.name)}">` : `<div class="noimg">Nessuna immagine</div>`}</div>
-        <div class="tiles">
-          <div class="tile"><span>Altezza</span><b>${c.height ?? "-"} cm</b></div>
-          <div class="tile"><span>Peso</span><b>${c.weight ?? "-"} kg</b></div>
-          <div class="tile"><span>Piede</span><b>${c.foot === "L" ? "Sinistro" : "Destro"}</b></div>
-          <div class="tile"><span>Punti</span><b>${totalPoints(p) ?? "?"}</b></div>
-        </div>
-        <div class="attrs">
-          <div><span>Frequenza piede debole</span><b>${esc(tr(WF, c.wfUsage))}</b></div>
-          <div><span>Precisione piede debole</span><b>${esc(tr(WF, c.wfAcc))}</b></div>
-          <div><span>Forma</span><b>${esc(tr(FORM, c.form))}</b></div>
-          <div><span>Resistenza infortuni</span><b class="${c.injury === "Low" ? "red" : ""}">${esc(tr(WF, c.injury))}</b></div>
-        </div>
-        <div class="mgr ${m.on ? "" : "off"}"><b>${esc(m.name)}</b><span>${m.on ? Object.entries(m.add).map(([k, v]) => `${esc(C.stats[k])} +${v}`).join(", ") + `, competenza +${m.pct}%` : "allenatore disattivato"}</span></div>
-      </div>
-      <div class="ctrls">
-        <label>Ruolo<select data-act="role">${Object.keys(C.roles).map(r => `<option ${r === p.role ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
-        <label>Gruppo<select data-act="setGroup">${GROUPS.map(g => `<option ${g === p.group ? "selected" : ""}>${g}</option>`).join("")}</select></label>
-        <label>Forma settimana${p.formType === "fissa" ? `<b class="fixed">B fissa</b>` : `<select data-act="form">${forms.map(f => `<option value="${f}" ${f === p.weekForm ? "selected" : ""}>${f || "-"}</option>`).join("")}</select>`}</label>
-        <a class="ext" href="${esc(c.pesdbUrl)}" target="_blank" rel="noopener">Scheda pesdb</a>
-      </div>
-    </section>`;
+  function mgrBar() {
+    const m = activeMgr();
+    return `<div class="mgrbar">
+      <label class="mgrsel"><span>Allenatore</span><select data-act="mgr" aria-label="Allenatore">
+        <option value="" ${S.mgrOn ? "" : "selected"}>Nessuno</option>
+        ${S.managers.map(x => `<option value="${x.id}" ${S.mgrOn && x.id === S.mgrId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+      <label class="mgrsel"><span>Stile di squadra</span><select data-act="teamStyle" aria-label="Stile di squadra">${C.teamStyles.map(t => `<option ${t === S.teamStyle ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      ${m ? `<div class="mgrfx">${Object.entries(m.add).map(([k, v]) => `<span class="pill">${esc(C.stats[k])} +${v}</span>`).join("")}<span class="pill ${m.pct ? "ok" : "ko"}">Competenza ${m.prof}${m.pct ? ` → +${m.pct}%` : " → nessun bonus"}</span></div>` : ""}
+    </div>`;
   }
 
-  function viewBuildBar(p) {
-    const tot = totalPoints(p), sp = spent(p);
-    let h = `<section class="panel bar">
-      <div class="boosters">${p.boosters.length ? p.boosters.map(b => `<span class="bchip" title="${b.condition ? esc(b.condition.text) : ""}"><i></i>${esc(b.name)} +${b.value}${b.condition ? ` <em>cond.</em>` : ""}</span>`).join("") : `<span class="bchip none"><i></i>Nessun booster</span>`}</div>`;
-    if (isTrending(p)) return h + `<p class="muted">Carta Trending: livello fisso, nessun punto da distribuire.</p></section>`;
-    h += `<div class="pts"><span><b class="${tot != null && tot - sp === 0 ? "" : "gold"}">${tot == null ? "?" : tot - sp}</b> punti liberi su
-      <input type="number" min="0" max="200" value="${tot ?? ""}" data-act="points" aria-label="Punti progressione totali"></span>
-      <span class="acts"><button class="btn" data-act="opt" data-zero="1" ${tot == null ? "disabled" : ""}>Build per ruolo</button><button class="btn ghost" data-act="reset">Azzera</button></span></div>
-      <div class="levels">${visibleCats(p).map(c => {
-        const L = p.build[c.key] || 0, nc = levelCost(L + 1), can = tot != null && tot - sp >= nc;
-        return `<div class="lv" title="${esc(c.name)}: ${c.stats.map(k => esc(C.stats[k])).join(", ")}">
-          <span class="ln">${esc(c.name)}</span>
-          <div class="lctl"><button data-act="lv" data-k="${c.key}" data-d="-1" ${L ? "" : "disabled"} aria-label="Togli un livello a ${esc(c.name)}">−</button>
-          <b>${L}</b><button data-act="lv" data-k="${c.key}" data-d="1" ${can ? "" : "disabled"} aria-label="Aggiungi un livello a ${esc(c.name)}">+</button></div>
-          <span class="nx">+1 = ${nc} pt</span></div>`;
-      }).join("")}</div>`;
-    if (tot == null) h += `<p class="warn">Punti progressione non noti per questa carta: inseriscili qui sopra.</p>`;
-    return h + `</section>`;
-  }
-
-  function viewStats(p) {
-    const mode = S.ui.mode, st = statsFor(p, mode), base = p.card.stats;
-    const gk = goalKeys(p), w = C.roles[p.role].weights;
+  function viewBuild(p) {
+    const tot = totalPoints(p), sp = spent(p), mode = S.ui.mode;
+    let h = `<section class="panel">
+      <div class="boosters">${p.boosters.length ? p.boosters.map(b => `<span class="bchip" title="${b.condition ? esc(b.condition.text) : ""}"><i></i>${esc(b.name)} +${b.value}${b.condition ? ` <em>cond.</em>` : ""}</span>`).join("") : `<span class="bchip none"><i></i>Nessun booster</span>`}</div>
+      ${mgrBar()}`;
+    if (isTrending(p)) h += `<p class="muted">Carta Trending: livello fisso, nessun punto da distribuire.</p>`;
+    else {
+      h += `<div class="pts"><span class="ptsn"><b class="${tot != null && tot - sp > 0 ? "gold" : ""}">${tot == null ? "?" : tot - sp}</b> punti liberi su ${tot ?? "?"}</span>
+        <span class="acts"><button class="btn small" data-act="opt" data-zero="1" ${tot == null ? "disabled" : ""}>Auto per ruolo</button><button class="btn small ghost" data-act="reset">Azzera</button></span></div>
+        <div class="levels">${visibleCats(p).map(c => {
+          const L = p.build[c.key] || 0, nc = levelCost(L + 1), can = tot != null && tot - sp >= nc;
+          return `<div class="lv"><span class="ln">${esc(c.name)}</span>
+            <div class="lctl"><button data-act="lv" data-k="${c.key}" data-d="-1" ${L ? "" : "disabled"} aria-label="Togli un livello a ${esc(c.name)}">−</button>
+            <b>${L}</b><button data-act="lv" data-k="${c.key}" data-d="1" ${can ? "" : "disabled"} aria-label="Aggiungi un livello a ${esc(c.name)}">+</button></div>
+            <span class="nx">${c.stats.map(k => esc(C.stats[k])).join(" · ")}</span></div>`;
+        }).join("")}</div>`;
+      if (tot == null) h += `<p class="warn">Punti progressione non noti: inseriscili nella tab Scheda.</p>`;
+    }
+    h += `</section>`;
+    const st = statsFor(p, mode), base = p.card.stats, gk = goalKeys(p), w = C.roles[p.role].weights;
     const score = weightedScore(st, w), sBase = weightedScore(base, w);
     const cols = [
       { n: "Attacco", s: C.statGroups[0].stats },
       { n: "Difesa", s: p.role === "PT" ? C.statGroups[1].stats.concat(C.statGroups[3].stats) : C.statGroups[1].stats },
       { n: "Fisico", s: C.statGroups[2].stats }
     ];
-    return `<section class="panel">
+    const m = activeMgr();
+    h += `<section class="panel">
       <div class="shead"><div class="seg small" role="tablist" aria-label="Valori mostrati">
-        ${[["base", "Carta base"], ["build", "Build"], ["mgr", "Build + " + S.manager.name.split(" ").pop()]].map(([k, l]) => `<button role="tab" data-act="mode" data-m="${k}" aria-selected="${mode === k}" ${k === "mgr" && !S.manager.on ? "disabled" : ""}>${esc(l)}</button>`).join("")}</div>
-        <div class="score"><b>${score.toFixed(1)}</b> indice ${esc(p.role)}${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
+        ${[["base", "Carta"], ["build", "Build"], ["mgr", m ? "+ " + m.name.split(" ").pop() : "+ allenatore"]].map(([k, l]) => `<button role="tab" data-act="mode" data-m="${k}" aria-selected="${mode === k}" ${k === "mgr" && !m ? "disabled" : ""}>${esc(l)}</button>`).join("")}</div>
+        <div class="score"><b>${score.toFixed(1)}</b> indice ruolo${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
       <div class="scols">${cols.map(col => `<div class="scol">${col.s.map(k => {
         const v = st[k], d = v - base[k];
-        return `<div class="srow ${band(v)}"><span class="sl">${esc(C.stats[k])}</span>${gk.includes(k) ? `<i class="dot" title="obiettivo"></i>` : ""}${d > 0 ? `<small>+${d}</small>` : ""}<b class="badge ${band(v)}">${v}</b></div>`;
+        return `<div class="srow ${band(v)}"><span class="sl">${esc(C.stats[k])}</span>${gk.includes(k) ? `<i class="dot" title="nel tuo obiettivo"></i>` : ""}${d > 0 ? `<small>+${d}</small>` : ""}<b class="badge ${band(v)}">${v}</b></div>`;
       }).join("")}</div>`).join("")}</div>
     </section>`;
+    return h;
   }
 
   const WLABEL = { 3: "Principale", 2: "Importante", 1: "Utile" };
   function viewGoal(p) {
-    const g = goalOf(p), keys = goalKeys(p), open = S.ui.openGoal || keys.length;
+    const g = goalOf(p), keys = goalKeys(p);
     const fin = statsFor(p, "build"), base = p.card.stats;
-    let h = `<section class="panel goal"><details ${open ? "open" : ""} data-act="goalToggle"><summary><h3>Obiettivo build</h3><span class="muted">${keys.length ? keys.map(k => esc(C.stats[k])).slice(0, 4).join(", ") + (keys.length > 4 ? "…" : "") : "dimmi cosa vuoi da questa carta"}</span></summary>
+    let h = `<section class="panel"><h3>Cosa vuoi da ${esc(p.name.split(" ").pop())}?</h3>
       <div class="gin"><input type="text" data-act="goalText" value="${esc(g.text)}" placeholder="es. velocità, dribbling e tiro a giro, velocità almeno 90" aria-label="Obiettivo">
-      <button class="btn" data-act="goalParse">Interpreta</button></div>`;
+      <button class="btn primary" data-act="goalParse">Interpreta</button></div>
+      <p class="muted">Riconosce parole come velocità, scatto, dribbling, tiro a giro, finalizzazione, passaggi, testa, fisico, difesa, punizioni. Un numero dopo la parola diventa il minimo.</p>`;
     if (keys.length) {
       h += `<div class="grows">` + keys.sort((a, b) => g.weights[b] - g.weights[a]).map(k => {
         const mn = g.mins[k], ok = !mn || fin[k] >= mn;
         return `<div class="grow"><span class="gl">${esc(C.stats[k])}</span>
-          <span class="gv"><b class="badge ${band(base[k])}">${base[k]}</b> → <b class="badge ${band(fin[k])}">${fin[k]}</b></span>
-          <select data-act="goalW" data-k="${k}" aria-label="Importanza">${[3, 2, 1].map(v => `<option value="${v}" ${g.weights[k] === v ? "selected" : ""}>${WLABEL[v]}</option>`).join("")}</select>
-          <input type="number" min="0" max="120" placeholder="min" value="${mn || ""}" data-act="goalMin" data-k="${k}" aria-label="Minimo" class="${ok ? "" : "ko"}">
+          <span class="gv"><b class="badge sm ${band(base[k])}">${base[k]}</b>→<b class="badge sm ${band(fin[k])}">${fin[k]}</b></span>
+          <select data-act="goalW" data-k="${k}" aria-label="Importanza di ${esc(C.stats[k])}">${[3, 2, 1].map(v => `<option value="${v}" ${g.weights[k] === v ? "selected" : ""}>${WLABEL[v]}</option>`).join("")}</select>
+          <input type="number" inputmode="numeric" min="0" max="120" placeholder="min" value="${mn || ""}" data-act="goalMin" data-k="${k}" aria-label="Minimo per ${esc(C.stats[k])}" class="${ok ? "" : "ko"}">
           <button class="x" data-act="goalDel" data-k="${k}" aria-label="Togli ${esc(C.stats[k])}">×</button></div>`;
       }).join("") + `</div>`;
     }
-    h += `<div class="gopts"><select data-act="goalAdd" aria-label="Aggiungi statistica"><option value="">+ statistica</option>${STAT_KEYS.filter(k => !g.weights[k]).map(k => `<option value="${k}">${esc(C.stats[k])}</option>`).join("")}</select>
+    h += `<div class="gopts"><select data-act="goalAdd" aria-label="Aggiungi statistica"><option value="">+ aggiungi statistica</option>${STAT_KEYS.filter(k => !g.weights[k]).map(k => `<option value="${k}">${esc(C.stats[k])}</option>`).join("")}</select>
       <label class="chk"><input type="checkbox" data-act="goalBlend" ${g.blend ? "checked" : ""}> considera anche il ruolo</label></div>`;
-    if (!isTrending(p)) h += `<div class="acts"><button class="btn primary" data-act="optGoal" ${keys.length && totalPoints(p) != null ? "" : "disabled"}>Calcola build per l'obiettivo</button>${keys.length ? `<button class="btn ghost" data-act="goalClear">Svuota</button>` : ""}</div>`;
+    if (!isTrending(p)) h += `<div class="acts"><button class="btn primary big" data-act="optGoal" ${keys.length && totalPoints(p) != null ? "" : "disabled"}>Calcola la build</button>${keys.length ? `<button class="btn ghost" data-act="goalClear">Svuota</button>` : ""}</div>`;
+    h += `</section>`;
     if (keys.length) {
-      const sk = canTrain(p) ? goalSkills(p) : [];
-      const w = goalWeights(p);
+      const sk = canTrain(p) ? goalSkills(p) : [], w = goalWeights(p);
       const lib = Object.keys(S.boosterDefs).filter(n => (S.boosterDefs[n] || []).length).map(n => [n, boosterFit(n, w)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
-      h += `<div class="gsug"><div><h4>Abilità utili</h4>${sk.length ? `<div class="chips">${sk.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `magazzino ${q}` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">${canTrain(p) ? "Ha già quelle collegate." : "Trending: niente abilità extra."}</p>`}</div>
-        <div><h4>Booster adatti</h4>${lib.length ? `<div class="chips">${lib.map(x => `<span class="chip">${esc(x[0])}</span>`).join("")}</div><p class="muted">Contano solo dove puoi scegliere il 2° booster.</p>` : `<p class="muted">Compila la libreria booster in Impostazioni.</p>`}</div></div>`;
+      const mg = S.managers.map(x => [x, Object.keys(x.add).reduce((a, k) => a + (w[k] || 0), 0)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      h += `<section class="panel"><h3>Consigli per questo obiettivo</h3>
+        <h4>Abilità</h4>${sk.length ? `<div class="chips">${sk.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `${q} in magazzino` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">${canTrain(p) ? "Ha già quelle collegate." : "Trending: niente abilità extra."}</p>`}
+        <h4>Allenatori che aiutano</h4>${mg.length ? `<div class="chips">${mg.map(([x]) => `<span class="chip">${esc(x.name)}<small>${Object.entries(x.add).map(([k, v]) => `${esc(C.stats[k])} +${v}`).join(", ")}</small></span>`).join("")}</div>` : `<p class="muted">Nessuno dei tuoi allenatori tocca queste statistiche.</p>`}
+        <h4>Booster</h4>${lib.length ? `<div class="chips">${lib.map(x => `<span class="chip">${esc(x[0])}</span>`).join("")}</div><p class="muted">Contano solo dove puoi scegliere il 2° booster.</p>` : `<p class="muted">Nessun booster in libreria tocca queste statistiche.</p>`}
+      </section>`;
     }
-    return h + `</details></section>`;
+    return h;
   }
 
   function viewSkills(p) {
     const role = C.roles[p.role], own = owned(p);
-    let h = `<section class="panel"><h3>Abilità</h3><div class="chips">${p.baseSkills.map(k => `<span class="chip ${isSpecial(k) ? "sp" : ""}" title="${esc(k)}">${esc(it(k))}</span>`).join("")}</div>
-      <h3>Competenze aggiuntive <span class="muted">${p.extraSkills.length}/${MAX_EXTRA}</span></h3>`;
+    let h = `<section class="panel"><h3>Abilità della carta</h3><div class="chips">${p.baseSkills.map(k => `<span class="chip ${isSpecial(k) ? "sp" : ""}" title="${esc(k)}">${esc(it(k))}</span>`).join("")}</div></section>
+      <section class="panel"><h3>Competenze aggiuntive <span class="muted">${p.extraSkills.length}/${MAX_EXTRA}</span></h3>`;
     if (!canTrain(p)) h += `<p class="muted">Carta Trending: non può imparare abilità extra.</p>`;
     else {
-      const avail = Object.entries(S.stock).filter(([k, q]) => q > 0 && !own.has(k))
-        .sort((a, b) => (role.skills.includes(b[0]) - role.skills.includes(a[0])) || it(a[0]).localeCompare(it(b[0])));
-      const opts = avail.map(([k, q]) => `<option value="${esc(k)}">${role.skills.includes(k) ? "★ " : ""}${esc(it(k))} (${q})</option>`).join("");
       h += `<div class="slots">`;
       for (let i = 0; i < MAX_EXTRA; i++) {
         const k = p.extraSkills[i];
         if (k) {
           const v = skillValue(p, k);
-          h += `<div class="slot ${v}"><span class="sname">${esc(it(k))}</span><span class="stag">${v === "key" ? "utile al ruolo" : v === "weak" ? "poco utile qui" : v === "lock" ? "bloccata" : ""}</span>
-            <span class="sacts"><button class="btn small ghost" data-act="lock" data-k="${esc(k)}">${v === "lock" ? "Sblocca" : "Blocca"}</button>
-            ${v !== "lock" ? `${avail.length ? `<select data-act="replace" data-i="${i}" aria-label="Sostituisci ${esc(it(k))}"><option value="">Sostituisci…</option>${opts}</select>` : ""}<button class="btn small ghost" data-act="remove" data-i="${i}">Elimina</button>` : ""}</span></div>`;
-        } else {
-          h += `<div class="slot empty"><span class="sname">Slot libero</span><span class="sacts">${avail.length ? `<select data-act="add" aria-label="Aggiungi abilità"><option value="">Aggiungi dal magazzino…</option>${opts}</select>` : `<span class="muted">magazzino vuoto</span>`}</span></div>`;
-        }
+          h += `<button class="slot ${v}" data-act="openSlot" data-i="${i}"><span class="sname">${esc(it(k))}</span><span class="stag">${v === "key" ? "utile al ruolo" : v === "weak" ? "poco utile qui" : v === "lock" ? "bloccata" : ""}</span><span class="chev">›</span></button>`;
+        } else h += `<button class="slot empty" data-act="openSlot" data-i="${i}"><span class="sname">+ Aggiungi abilità</span><span class="chev">›</span></button>`;
       }
-      h += `</div>`;
+      h += `</div><p class="muted">Tocca uno slot per aggiungere, sostituire, bloccare o eliminare.</p>`;
     }
     warnings(p).forEach(x => h += `<p class="warn">${esc(x)}</p>`);
+    h += `</section>`;
     const missing = role.skills.filter(k => !own.has(k));
-    h += `<h3>Priorità per ${esc(p.role)}</h3>${missing.length ? `<div class="chips">${missing.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `magazzino ${q}` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">Ha già tutte le abilità prioritarie del ruolo.</p>`}`;
-    if (p.group === "Panchina" && !own.has("Super-sub") && canTrain(p)) h += `<p class="note">Se entra quasi sempre nel secondo tempo, valuta Riserva di lusso (magazzino: ${S.stock["Super-sub"] || 0}).</p>`;
-    return h + `</section>`;
+    h += `<section class="panel"><h3>Mancano per ${esc(p.role)}</h3>${missing.length ? `<div class="chips">${missing.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `${q} in magazzino` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">Ha già tutte le abilità prioritarie del ruolo.</p>`}
+      ${p.group === "Panchina" && !own.has("Super-sub") && canTrain(p) ? `<p class="note">Se entra quasi sempre nel secondo tempo, valuta Riserva di lusso (${S.stock["Super-sub"] || 0} in magazzino).</p>` : ""}</section>`;
+    return h;
+  }
+
+  function viewCard(p) {
+    const c = p.card, forms = ["", "A", "B", "C", "D", "E"];
+    return `<section class="panel cardview">
+      <div class="cv-img">${p.img ? `<img src="${p.img}" alt="Carta di ${esc(p.name)}">` : `<div class="noimg">Nessuna immagine</div>`}</div>
+      <div class="cv-info"><h3>${esc(c.cardType)}</h3><p class="muted">${esc(c.pack)}</p>
+        <div class="tiles">
+          <div class="tile"><span>Altezza</span><b>${c.height ?? "-"} cm</b></div>
+          <div class="tile"><span>Peso</span><b>${c.weight ?? "-"} kg</b></div>
+          <div class="tile"><span>Piede</span><b>${c.foot === "L" ? "Sinistro" : "Destro"}</b></div>
+          <div class="tile"><span>Posizioni</span><b>${esc(c.positions.join(" "))}</b></div>
+        </div>
+        <div class="attrs">
+          <div><span>Frequenza piede debole</span><b>${esc(tr(WF, c.wfUsage))}</b></div>
+          <div><span>Precisione piede debole</span><b>${esc(tr(WF, c.wfAcc))}</b></div>
+          <div><span>Forma</span><b>${esc(tr(FORM, c.form))}</b></div>
+          <div><span>Resistenza infortuni</span><b class="${c.injury === "Low" ? "red" : ""}">${esc(tr(WF, c.injury))}</b></div>
+        </div></div>
+    </section>
+    <section class="panel"><h3>Impostazioni carta</h3>
+      <div class="ctrls">
+        <label>Ruolo<select data-act="role">${Object.keys(C.roles).map(r => `<option ${r === p.role ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
+        <label>Gruppo<select data-act="setGroup">${GROUPS.map(g => `<option ${g === p.group ? "selected" : ""}>${g}</option>`).join("")}</select></label>
+        <label>Forma settimana${p.formType === "fissa" ? `<b class="fixed">B fissa</b>` : `<select data-act="form">${forms.map(f => `<option value="${f}" ${f === p.weekForm ? "selected" : ""}>${f || "-"}</option>`).join("")}</select>`}</label>
+        ${isTrending(p) ? "" : `<label>Punti progressione<input type="number" inputmode="numeric" min="0" max="200" value="${totalPoints(p) ?? ""}" data-act="points"></label>`}
+      </div>
+      <p><a href="${esc(c.pesdbUrl)}" target="_blank" rel="noopener">Apri la scheda su pesdb</a></p></section>
+    ${p.boosters.length ? `<section class="panel"><h3>Cosa alzano i booster</h3>${p.boosters.map(b => boosterEditor(b.name) + (b.condition ? `<p class="warn">${esc(b.condition.text)}</p>` : "")).join("")}</section>` : ""}`;
   }
 
   function boosterEditor(n) {
     const d = S.boosterDefs[n] || [];
-    return `<details><summary>${esc(n)}: <span class="muted">${d.length ? d.map(k => esc(C.stats[k])).join(", ") : "statistiche da impostare"}</span></summary>
+    return `<details class="bdef"><summary><b>${esc(n)}</b> <span class="muted">${d.length ? d.map(k => esc(C.stats[k])).join(", ") : "statistiche da impostare"}</span></summary>
       <div class="statpick">${STAT_KEYS.map(k => `<label><input type="checkbox" data-act="bdef" data-b="${esc(n)}" data-k="${k}" ${d.includes(k) ? "checked" : ""}> ${esc(C.stats[k])}</label>`).join("")}</div></details>`;
-  }
-  function viewBoosterDefs(p) {
-    if (!p.boosters.length) return "";
-    return `<section class="panel"><h3>Cosa alzano i booster</h3>${p.boosters.map(b => boosterEditor(b.name) + (b.condition ? `<p class="warn">${esc(b.condition.text)}</p>` : "")).join("")}</section>`;
   }
 
   function viewStock() {
     const keys = Object.keys(SK).filter(k => !SK[k].special && SK[k].cat !== "gk").concat(Object.keys(S.stock).filter(k => !SK[k]));
     const uniq = [...new Set(keys)].sort((a, b) => (S.stock[b] || 0) - (S.stock[a] || 0) || it(a).localeCompare(it(b)));
-    return `<section class="panel"><h2 class="ptitle">Magazzino abilità</h2><p class="muted">Copie salvate e giocatori a cui servirebbero per il loro ruolo (prima chi ha slot liberi).</p>
+    return `<section class="panel"><h2 class="ptitle">Magazzino abilità</h2><p class="muted">Copie salvate e giocatori a cui servirebbero per il loro ruolo. ● = ha slot liberi.</p>
     <div class="stock">${uniq.map(k => {
       const q = S.stock[k] || 0;
       const who = S.players.filter(p => canTrain(p) && !owned(p).has(k) && (C.roles[p.role].skills.includes(k) || (k === "Super-sub" && p.group === "Panchina")))
         .sort((a, b) => (b.extraSkills.length < MAX_EXTRA) - (a.extraSkills.length < MAX_EXTRA) || (a.group === "Titolari" ? -1 : 1));
       return `<div class="srec ${q ? "" : "zero"}"><div class="sr1"><b>${esc(it(k))}</b><span class="lctl"><button data-act="stock" data-k="${esc(k)}" data-d="-1" ${q ? "" : "disabled"} aria-label="Togli una copia">−</button><b>${q}</b><button data-act="stock" data-k="${esc(k)}" data-d="1" aria-label="Aggiungi una copia">+</button></span></div>
         ${who.length ? `<div class="who">${who.slice(0, 8).map(p => `<button class="link" data-act="goto" data-id="${p.id}">${esc(p.name)}${p.extraSkills.length < MAX_EXTRA ? " ●" : ""}</button>`).join("")}</div>` : ""}</div>`;
-    }).join("")}</div><p class="muted">● = ha slot extra liberi</p></section>`;
+    }).join("")}</div></section>`;
   }
 
   function allBoosterNames() {
@@ -354,14 +416,12 @@
   }
 
   function viewSettings() {
-    const m = S.manager;
-    return `<section class="panel"><h2 class="ptitle">Allenatore</h2>
-      <label class="chk"><input type="checkbox" data-act="mgrOn" ${m.on ? "checked" : ""}> Applica l'allenatore alle statistiche</label>
-      <div class="ctrls"><label>Nome<input type="text" data-act="mgrName" value="${esc(m.name)}"></label>
-      <label>Competenza %<input type="number" min="0" max="10" step="0.5" value="${m.pct}" data-act="mgrPct"></label></div>
-      <p class="muted">Booster dell'allenatore (+1 su statistiche precise):</p>
-      <div class="statpick">${STAT_KEYS.map(k => `<label><input type="checkbox" data-act="mgrAdd" data-k="${k}" ${m.add[k] ? "checked" : ""}> ${esc(C.stats[k])}</label>`).join("")}</div>
-      <p class="muted">Calibrato su Conte con Conceição: +3% arrotondato, 22 statistiche su 22 coincidono con il gioco.</p></section>
+    return `<section class="panel"><h2 class="ptitle">Allenatori</h2><p class="muted">Competenza per stile di squadra e booster, da efootballhub. Il bonus si applica se la competenza nello stile scelto è almeno ${C.proficiencyBoost[0].min}.</p>
+      <div class="mgrs">${S.managers.map(m => `<div class="mcard ${m.id === S.mgrId && S.mgrOn ? "on" : ""}">
+        <div class="mh"><b>${esc(m.name)}</b>${m.id === S.mgrId && S.mgrOn ? `<span class="pill ok">attivo</span>` : `<button class="btn small" data-act="setMgr" data-id="${m.id}">Usa</button>`}</div>
+        <div class="mfx">${Object.entries(m.add).map(([k, v]) => `<span class="pill">${esc(C.stats[k])} +${v}</span>`).join("")}</div>
+        <div class="mprof">${C.teamStyles.map((t, i) => `<div class="${t === S.teamStyle ? "cur" : ""}"><b class="badge sm ${band(m.prof[i])}">${m.prof[i]}</b><span>${t}</span></div>`).join("")}</div>
+        ${m.links.length ? `<ul class="links">${m.links.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div></section>
     <section class="panel"><h2 class="ptitle">Capitano</h2><p class="muted">Leader funziona solo sul capitano.</p>
       <select data-act="captain">${S.players.map(p => `<option value="${p.id}" ${p.id === S.captainId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></section>
     <section class="panel"><h2 class="ptitle">Libreria booster</h2><p class="muted">Statistiche alzate da ogni booster (le vedi nel gioco toccando il booster).</p>
@@ -370,7 +430,7 @@
     <section class="panel"><h2 class="ptitle">Abilità tolte</h2>
       <label class="chk"><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
     <section class="panel"><h2 class="ptitle">Regole di progressione</h2>
-      <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto statistica allenata ${C.statCap}. Verificate in gioco su Conceição.</p>
+      <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto ${C.statCap}. Verificate in gioco su Conceição.</p>
       <table class="rules">${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</table></section>`;
   }
 
@@ -524,37 +584,49 @@
 
   // ---------- eventi ----------
   function setBuild(p, b) { p.build = b; render(); }
+  function assignSkill(p, i, k) {
+    if (p.extraSkills[i]) { const old = p.extraSkills[i]; if (S.returnRemoved) S.stock[old] = (S.stock[old] || 0) + 1; p.extraSkills[i] = k; }
+    else p.extraSkills.push(k);
+    S.stock[k] = Math.max(0, (S.stock[k] || 0) - 1);
+    S.ui.sheet = null; toast(`${it(k)} assegnata a ${p.name}`); render();
+  }
   document.addEventListener("click", e => {
     const t = e.target.closest("[data-act],[data-view]");
-    if (!t || t.tagName === "SELECT" || t.tagName === "INPUT" || t.tagName === "DETAILS") return;
-    if (t.dataset.view) { S.ui.view = t.dataset.view; render(); window.scrollTo(0, 0); return; }
+    if (!t || t.tagName === "SELECT" || t.tagName === "INPUT") return;
+    if (t.dataset.view) { S.ui.view = t.dataset.view; S.ui.sheet = null; render(); window.scrollTo(0, 0); return; }
     const p = cur(), a = t.dataset.act;
-    if (a === "pick" || a === "goto") { const x = player(t.dataset.id); S.ui.playerId = x.id; S.ui.group = x.group; S.ui.view = "player"; render(); if (a === "goto") window.scrollTo(0, 0); }
-    else if (a === "group") { S.ui.group = t.dataset.g; render(); }
+    if (a === "pick" || a === "goto") { S.ui.playerId = t.dataset.id; S.ui.view = "player"; S.ui.sheet = null; if (a === "goto") S.ui.tab = "skills"; render(); window.scrollTo(0, 0); }
+    else if (a === "openPlayers") { S.ui.sheet = { type: "players" }; render(); }
+    else if (a === "openSlot") { S.ui.sheet = { type: "slot", i: Number(t.dataset.i) }; render(); }
+    else if (a === "closeSheet") { S.ui.sheet = null; render(); }
+    else if (a === "pickSkill") assignSkill(p, S.ui.sheet.i, t.dataset.k);
+    else if (a === "tab") { S.ui.tab = t.dataset.t; render(); }
     else if (a === "mode") { S.ui.mode = t.dataset.m; render(); }
     else if (a === "lv") {
       const k = t.dataset.k, b = Object.assign({}, p.build, { [k]: Math.max(0, (p.build[k] || 0) + Number(t.dataset.d)) });
       if (spentOf(b) <= totalPoints(p)) setBuild(p, b);
     }
-    else if (a === "opt") { setBuild(p, optimize(p, !!t.dataset.zero)); toast("Build per il ruolo calcolata"); }
+    else if (a === "opt") { setBuild(p, optimize(p, true)); toast("Build automatica per il ruolo"); }
     else if (a === "reset") setBuild(p, {});
     else if (a === "lock") { const k = t.dataset.k; p.lockedExtras = (p.lockedExtras || []).includes(k) ? p.lockedExtras.filter(x => x !== k) : (p.lockedExtras || []).concat(k); render(); }
-    else if (a === "remove") { const k = p.extraSkills.splice(Number(t.dataset.i), 1)[0]; if (S.returnRemoved) S.stock[k] = (S.stock[k] || 0) + 1; toast(`${it(k)} eliminata`); render(); }
+    else if (a === "remove") { const k = p.extraSkills.splice(Number(t.dataset.i), 1)[0]; if (S.returnRemoved) S.stock[k] = (S.stock[k] || 0) + 1; S.ui.sheet = null; toast(`${it(k)} eliminata`); render(); }
     else if (a === "stock") { const k = t.dataset.k; S.stock[k] = Math.max(0, (S.stock[k] || 0) + Number(t.dataset.d)); render(); }
+    else if (a === "setMgr") { S.mgrId = t.dataset.id; S.mgrOn = true; render(); toast("Allenatore attivo cambiato"); }
     else if (a === "goalParse") {
       const g = goalOf(p), inp = $("[data-act=goalText]"); g.text = inp ? inp.value : g.text;
       const r = parseGoal(g.text);
       if (!Object.keys(r.w).length) { toast("Nessuna statistica riconosciuta: aggiungila dall'elenco"); return; }
-      g.weights = r.w; g.mins = r.mins; render(); toast("Obiettivo impostato");
+      g.weights = r.w; g.mins = r.mins; render(); toast("Obiettivo impostato: ora premi Calcola la build");
     }
     else if (a === "goalDel") { const g = goalOf(p); delete g.weights[t.dataset.k]; delete g.mins[t.dataset.k]; render(); }
     else if (a === "goalClear") { p.goal = { text: "", weights: {}, mins: {}, blend: true }; render(); }
     else if (a === "optGoal") {
       const g = goalOf(p);
-      setBuild(p, optimize(p, true, goalWeights(p), g.mins));
+      p.build = optimize(p, true, goalWeights(p), g.mins);
       const st = statsFor(p, "build");
       const miss = Object.entries(g.mins).filter(([k, v]) => v && st[k] < v).map(([k]) => C.stats[k]);
-      toast(miss.length ? "Minimi non raggiungibili: " + miss.join(", ") : "Build calcolata per l'obiettivo");
+      S.ui.tab = "build"; render(); window.scrollTo(0, 0);
+      toast(miss.length ? "Minimi non raggiungibili: " + miss.join(", ") : "Build calcolata: eccola applicata");
     }
     else if (a === "exportXlsx") exportXlsx();
     else if (a === "exportCsv") exportCsv();
@@ -563,35 +635,32 @@
     else if (a === "addBooster") { const i = $("[data-act=newBooster]"), n = i && i.value.trim(); if (n) { S.boosterDefs[n] = S.boosterDefs[n] || []; render(); } }
     else if (a === "wipe") { if (confirm("Tornare ai dati iniziali? Le modifiche non esportate andranno perse.")) { S = freshState(); render(); } }
   });
-  document.addEventListener("toggle", e => { if (e.target.dataset && e.target.dataset.act === "goalToggle") S.ui.openGoal = e.target.open; }, true);
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && S.ui.sheet) { S.ui.sheet = null; render(); } });
+  document.addEventListener("input", e => {
+    if (e.target.dataset.act === "search") {
+      S.ui.q = e.target.value; renderSheet();
+      const s = $("#sheet .search"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+    }
+  });
   document.addEventListener("change", e => {
     const t = e.target, a = t.dataset.act; if (!a) return;
     const p = cur();
     if (a === "role") { p.role = t.value; render(); }
-    else if (a === "setGroup") { p.group = t.value; S.ui.group = t.value; render(); }
+    else if (a === "setGroup") { p.group = t.value; render(); }
     else if (a === "form") { p.weekForm = t.value; render(); }
     else if (a === "points") { const v = t.value === "" ? null : Math.max(0, Number(t.value)); p.pointsOverride = v; if (v != null && spent(p) > v) p.build = {}; render(); }
+    else if (a === "mgr") { if (t.value) { S.mgrId = t.value; S.mgrOn = true; } else { S.mgrOn = false; if (S.ui.mode === "mgr") S.ui.mode = "build"; } render(); }
+    else if (a === "teamStyle") { S.teamStyle = t.value; render(); }
     else if (a === "bdef") {
       const b = t.dataset.b, k = t.dataset.k, l = new Set(S.boosterDefs[b] || []);
       t.checked ? l.add(k) : l.delete(k); S.boosterDefs[b] = [...l]; render();
-      document.querySelectorAll("details").forEach(x => { const s = x.querySelector("summary"); if (s && s.textContent.startsWith(b + ":")) x.open = true; });
-    }
-    else if (a === "add" || a === "replace") {
-      const k = t.value; if (!k) return;
-      if (a === "add") p.extraSkills.push(k);
-      else { const i = Number(t.dataset.i), old = p.extraSkills[i]; p.extraSkills[i] = k; if (S.returnRemoved) S.stock[old] = (S.stock[old] || 0) + 1; }
-      S.stock[k] = Math.max(0, (S.stock[k] || 0) - 1);
-      toast(`${it(k)} assegnata a ${p.name}`); render();
+      document.querySelectorAll("details.bdef").forEach(x => { const s = x.querySelector("summary b"); if (s && s.textContent === b) x.open = true; });
     }
     else if (a === "goalText") goalOf(p).text = t.value;
     else if (a === "goalW") { goalOf(p).weights[t.dataset.k] = Number(t.value); render(); }
     else if (a === "goalMin") { const g = goalOf(p), v = Number(t.value); if (v > 0) g.mins[t.dataset.k] = v; else delete g.mins[t.dataset.k]; render(); }
-    else if (a === "goalAdd") { if (t.value) { goalOf(p).weights[t.value] = 2; S.ui.openGoal = true; render(); } }
+    else if (a === "goalAdd") { if (t.value) { goalOf(p).weights[t.value] = 2; render(); } }
     else if (a === "goalBlend") { goalOf(p).blend = t.checked; render(); }
-    else if (a === "mgrOn") { S.manager.on = t.checked; if (!t.checked && S.ui.mode === "mgr") S.ui.mode = "build"; render(); }
-    else if (a === "mgrName") { S.manager.name = t.value || "Allenatore"; render(); }
-    else if (a === "mgrPct") { S.manager.pct = Math.max(0, Number(t.value) || 0); render(); }
-    else if (a === "mgrAdd") { if (t.checked) S.manager.add[t.dataset.k] = 1; else delete S.manager.add[t.dataset.k]; render(); }
     else if (a === "captain") { S.captainId = t.value; render(); }
     else if (a === "returnRemoved") { S.returnRemoved = t.checked; render(); }
     else if (a === "importAny") {

@@ -37,7 +37,7 @@ Le modifiche restano nel `localStorage` del browser. Fai export (Excel o backup 
 ## Regole verificate in gioco
 - Costo livelli e statistiche per categoria: verificati su Conceição (build 9/3/8/8/10 = 60 punti, tutte le statistiche coincidono con efootballhub).
 - Booster verificati: Gestione del pallone, Calci di punizione. Gli altri si impostano in Impostazioni → Libreria booster.
-- Allenatore (Conte): +1 Comportamento difensivo, +1 Potenza di tiro, poi +3% arrotondato. 22 statistiche su 22 coincidono.
+- Allenatori: 9 allenatori della rosa (booster e competenze per stile, da efootballhub). Con competenza 90 nello stile scelto (Conte, Contropiede veloce) il bonus è +3%: 22 statistiche su 22 coincidono. La soglia per competenze diverse (es. 88) è da verificare (`proficiencyBoost` in `data/config.js`).
 
 ## Da verificare in gioco
 - Le statistiche degli altri booster.

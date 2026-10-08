@@ -59,9 +59,29 @@ window.CONFIG = {
     "Gestione del pallone": ["Dribbling", "Tight Possession", "Speed", "Balance"],
     "Calci di punizione": ["Finishing", "Set Piece Taking", "Curl", "Kicking Power"]
   },
-  // Allenatore: booster fissi + bonus percentuale di competenza sullo stile di gioco.
-  // Calibrato su Conte con Conceição: +3% arrotondato (floor(v*0.03+0.45)), 22 statistiche su 22 coincidono.
-  managerDefault: { on: true, name: "Antonio Conte", pct: 3, add: { "Defensive Awareness": 1, "Kicking Power": 1 } },
+  // Stili di gioco di squadra (ordine come su efootballhub)
+  teamStyles: ["Possesso palla", "Contrattacco", "Contropiede veloce", "Passaggio lungo", "Vie laterali", "Pressing totale"],
+  // Bonus alle statistiche in base alla competenza dell'allenatore nello stile scelto.
+  // Dato verificato: Conte, Contropiede veloce 90 -> +3% (22 statistiche su 22). Le altre soglie sono da verificare.
+  proficiencyBoost: [{ min: 89, pct: 3 }],
+  // Allenatori della rosa (da efootballhub, 9/10/2026). prof = competenza per stile, nello stesso ordine di teamStyles.
+  managers: [
+    { id: "conte", name: "Antonio Conte", add: { "Defensive Awareness": 1, "Kicking Power": 1 }, prof: [68, 73, 90, 68, 89, 69],
+      links: ["Passaggio in profondità alto C: Sviluppo (DC) → Ala prolifica (ESA, EDA)", "1-2 Cut-in B: Ala prolifica (ESA, EDA) → Rapace d'area (P)"] },
+    { id: "fabregas", name: "Cesc Fàbregas", add: { "Lofted Pass": 1, "Defensive Engagement": 1 }, prof: [89, 56, 65, 57, 68, 56],
+      links: ["Passaggio in profondità alto A: Tra le linee (MED) → Opportunista (P)"] },
+    { id: "koeman", name: "Ronald Koeman", add: { "Low Pass": 1, "Heading": 1 }, prof: [89, 55, 88, 61, 68, 55],
+      links: ["Cross aggressivo A: Specialista di cross (CLS, CLD) → Rapace d'area (P)"] },
+    { id: "southgate", name: "G. Southgate", add: { "Acceleration": 1 }, prof: [44, 87, 86, 32, 69, 32], links: [] },
+    { id: "gattuso", name: "Gennaro Gattuso", add: { "Tackling": 1, "Lofted Pass": 1 }, prof: [53, 57, 65, 71, 89, 53],
+      links: ["Passaggio lungo diagonale A: Regista creativo (TRQ) → Giocatore chiave (CLS, CLD)"] },
+    { id: "alonso", name: "Xabi Alonso", add: { "Acceleration": 1 }, prof: [72, 35, 88, 28, 51, 28], links: [] },
+    { id: "amorim", name: "Ruben Amorim", add: { "Physical Contact": 1, "Lofted Pass": 1 }, prof: [62, 54, 81, 46, 89, 46],
+      links: ["Cross aggressivo A: Specialista di cross (CLS, CLD) → Rapace d'area (P)"] },
+    { id: "lampard", name: "Frank Lampard", add: { "Low Pass": 1, "Defensive Engagement": 1 }, prof: [75, 58, 60, 89, 69, 89],
+      links: ["1-2 con inserimento A: Regista creativo (CLS, CLD) → Rapace d'area (P)"] },
+    { id: "deschamps", name: "D. Deschamps", add: { "Speed": 1 }, prof: [69, 88, 62, 67, 75, 62], links: [] }
+  ],
 
   // Profili di ruolo: pesi delle statistiche (per l'ottimizzatore) e abilità prioritarie (per il gestore).
   // I pesi sono una base di partenza ragionata, non dati ufficiali.
