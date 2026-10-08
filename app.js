@@ -435,6 +435,7 @@
       <div class="ctrls"><input type="text" data-act="newBooster" placeholder="Nome nuovo booster" aria-label="Nome nuovo booster"><button class="btn small" data-act="addBooster">Aggiungi</button></div></section>
     <section class="panel"><h2 class="ptitle">Abilità tolte</h2>
       <label class="chk"><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
+    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610090135. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
     <section class="panel"><h2 class="ptitle">Regole di progressione</h2>
       <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto ${C.statCap}. Verificate in gioco su Conceição.</p>
       <table class="rules">${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</table></section>`;
