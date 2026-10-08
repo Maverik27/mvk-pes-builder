@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab Rosa eFootball</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <h1 class="brand">Lab Rosa</h1>
+  <nav class="topnav" aria-label="Sezioni">
+    <button data-view="player" class="navbtn">Giocatori</button>
+    <button data-view="stock" class="navbtn">Magazzino abilità</button>
+    <button data-view="settings" class="navbtn">Impostazioni</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="roster" id="roster" aria-label="Rosa"></aside>
+  <main id="main" class="main"></main>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="data/config.js"></script>
+<script src="data/skills.js"></script>
+<script src="data/roster.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
