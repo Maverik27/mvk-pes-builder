@@ -122,6 +122,54 @@ window.CONFIG = {
     "Andriy Shevchenko": "Opportunista", "Alexandre Pato": "Opportunista", "Kaká": "Regista / TRQ creativo",
     "Gareth Bale": "Ala da tiro a giro", "Luis Suárez": "Rapace d'area"
   },
+
+  // Interprete delle richieste in linguaggio naturale (senza AI): parole chiave -> statistiche e peso.
+  // Peso 3 = statistica principale della richiesta, 2 = di supporto.
+  goalKeywords: [
+    { re: "tiro a giro|a giro|giro|effetto|curl", w: { "Curl": 3, "Finishing": 2, "Kicking Power": 2 } },
+    { re: "velocit|veloce|rapid", w: { "Speed": 3, "Acceleration": 2 } },
+    { re: "scatt|accelera|esplosiv|brucian", w: { "Acceleration": 3, "Speed": 2 } },
+    { re: "dribbl|dribbling|saltare l.uomo|salta l.uomo|uno contro uno|1v1|conduzion", w: { "Dribbling": 3, "Ball Control": 2, "Tight Possession": 2, "Balance": 2 } },
+    { re: "controllo|possesso|protezione palla", w: { "Ball Control": 3, "Tight Possession": 2 } },
+    { re: "finalizz|tiro(?! a giro)|gol|segnare|bomber", w: { "Finishing": 3, "Kicking Power": 2, "Attacking Awareness": 2 } },
+    { re: "potenza|sassat|da fuori|dalla distanza", w: { "Kicking Power": 3, "Finishing": 2 } },
+    { re: "passagg|regia|assist|filtrant", w: { "Low Pass": 3, "Lofted Pass": 2 } },
+    { re: "lanci|lancio|cross", w: { "Lofted Pass": 3, "Curl": 1 } },
+    { re: "testa|aere|colpo di testa|palle alte", w: { "Heading": 3, "Jumping": 3, "Physical Contact": 2 } },
+    { re: "fisic|forza|contatto|spalla", w: { "Physical Contact": 3, "Balance": 2 } },
+    { re: "equilibrio|stabilit", w: { "Balance": 3 } },
+    { re: "resisten|fiato|stamina|corsa|box.to.box", w: { "Stamina": 3 } },
+    { re: "inseriment|smarcament|movimento|senza palla|istinto", w: { "Attacking Awareness": 3, "Acceleration": 1 } },
+    { re: "difes|marcatur|copertura", w: { "Defensive Awareness": 3, "Defensive Engagement": 3, "Tackling": 2 } },
+    { re: "contrast|tackle|recupero palla|rubapalla", w: { "Tackling": 3, "Aggression": 2 } },
+    { re: "aggressiv|pressing", w: { "Aggression": 3, "Defensive Engagement": 2, "Stamina": 1 } },
+    { re: "punizion|calci piazzati|calcio piazzato", w: { "Set Piece Taking": 3, "Curl": 3 } },
+    { re: "parat|riflessi|portiere", w: { "GK Reflexes": 3, "GK Reach": 3, "GK Awareness": 3, "GK Catching": 2, "GK Parrying": 2 } }
+  ],
+  // Abilità allenabili collegate a ciascuna statistica (per i consigli dell'obiettivo)
+  statSkills: {
+    "Curl": ["Long-range Curler", "Outside Curler"],
+    "Finishing": ["First-time Shot", "Acrobatic Finishing", "Rising Shot", "Dipping Shot"],
+    "Kicking Power": ["Long-range Shooting", "Rising Shot", "Knuckle Shot"],
+    "Dribbling": ["Double Touch", "Cut Behind & Turn", "Scissors Feint", "Chop Turn"],
+    "Ball Control": ["Sole Control", "Double Touch", "Cut Behind & Turn"],
+    "Tight Possession": ["Sole Control", "Double Touch", "Gamesmanship"],
+    "Balance": ["Gamesmanship"],
+    "Attacking Awareness": ["First-time Shot", "Acrobatic Finishing"],
+    "Low Pass": ["One-touch Pass", "Through Passing"],
+    "Lofted Pass": ["Weighted Pass", "Low Lofted Pass", "Pinpoint Crossing"],
+    "Heading": ["Heading", "Aerial Superiority"],
+    "Jumping": ["Aerial Superiority"],
+    "Physical Contact": ["Fighting Spirit"],
+    "Stamina": ["Track Back"],
+    "Defensive Awareness": ["Interception", "Man Marking", "Blocker"],
+    "Tackling": ["Sliding Tackle", "Blocker"],
+    "Defensive Engagement": ["Man Marking", "Track Back", "Acrobatic Clearance"],
+    "Aggression": ["Track Back", "Interception"],
+    "Set Piece Taking": ["Knuckle Shot", "Dipping Shot"],
+    "GK Reflexes": ["GK Penalty Saver"],
+    "GK Awareness": ["GK Low Punt", "GK Long Throw"]
+  },
   // Abilità quasi sempre a basso impatto: candidate alla sostituzione (a meno che tu non le blocchi)
   lowValueSkills: ["Rabona", "No Look Pass", "Sombrero", "Heel Trick", "Long Throw"]
 };

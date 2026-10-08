@@ -196,3 +196,20 @@ h2.sec + p { color: var(--muted); margin-top: -4px; }
   .topbar { gap: 12px; padding: 10px 16px; flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* obiettivo build */
+.goal { border: 1px solid var(--gold); border-radius: var(--radius-m); padding: 12px 14px; margin: 6px 0 4px; }
+.goal .sec { color: var(--gold); }
+.goalinput { display: flex; gap: 8px; }
+.goalinput input { flex: 1; min-width: 0; }
+.goalrows { margin-top: 10px; }
+.grow { display: grid; grid-template-columns: 1fr 120px 70px auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.goalres { border: 1px solid var(--gold); border-radius: var(--radius-m); padding: 12px 14px; margin-bottom: 20px; }
+.gtable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.gtable th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 4px; border-bottom: 1px solid var(--line); }
+.gtable td { padding: 5px 4px; border-bottom: 1px solid var(--line); }
+.gtable .up { color: var(--gold); }
+.ok { color: var(--good); }
+.ko { color: var(--rust); }
+h3.sub { font: 600 17px/1 var(--cond); color: var(--muted); margin: 16px 0 6px; }
+@media (max-width: 760px) { .grow { grid-template-columns: 1fr 110px 60px; } .grow .btn { grid-column: 1 / -1; justify-self: start; } }
