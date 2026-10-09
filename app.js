@@ -8,10 +8,20 @@
   const GROUPS = ["Titolari", "Ballottaggio DC", "Panchina"];
   const TABS = [["build", "Build"], ["skills", "Abilità"], ["goal", "Obiettivo"], ["card", "Scheda"]];
 
+  // ---------- posizioni ----------
+  // Posizione iniziale: la prima indicata nel tuo Excel (es. "MED/CC" -> MED), altrimenti quella principale della carta
+  function defaultPos(p) {
+    const sp = SEED.players.find(x => x.id === p.id) || p;
+    const first = String(sp.role || "").split(/[\/\s]+/)[0].toUpperCase();
+    if (C.positions.includes(first)) return first;
+    return C.posFromCard[(p.card || {}).pos] || "CC";
+  }
+  const prof = p => C.roles[C.posAlias[p.role] || p.role] || C.roles.CC;
+
   // ---------- stato ----------
   function freshState() {
     const s = JSON.parse(JSON.stringify(SEED));
-    s.players.forEach(p => { p.role = C.defaultRoles[p.name] || Object.keys(C.roles)[0]; p.build = p.build || {}; p.pointsOverride = null; });
+    s.players.forEach(p => { p.role = defaultPos(p); p.build = p.build || {}; p.pointsOverride = null; });
     s.boosterDefs = {};
     s.captainId = (s.players.find(p => p.name === "Oliver Kahn") || {}).id || null;
     s.returnRemoved = false;
@@ -39,6 +49,8 @@
         if (p && sp.build) p.build = Object.assign({}, sp.build);
       });
     });
+    // Dal ruolo tattico alla posizione in campo (sigle del gioco)
+    once("positions-v1", () => { s.players.forEach(p => { p.role = defaultPos(p); }); });
     once("managers-v1", () => {
       s.managers = JSON.parse(JSON.stringify(C.managers));
       s.mgrId = "conte"; s.teamStyle = "Contropiede veloce"; s.mgrOn = s.manager ? s.manager.on !== false : true;
@@ -122,7 +134,7 @@
   }
   // Ottimizzatore: 1) raggiunge i minimi richiesti, 2) spende il resto dove il peso guadagnato per punto è massimo
   const marginal = v => v >= C.statCap ? 0 : v >= 95 ? 0.15 : v >= 90 ? 0.35 : v >= 85 ? 0.6 : v >= 80 ? 0.8 : 1;
-  function optimize(p, fromZero, w = C.roles[p.role].weights, mins = {}) {
+  function optimize(p, fromZero, w = prof(p).weights, mins = {}) {
     const b = fromZero ? {} : Object.assign({}, p.build);
     let left = totalPoints(p) - spentOf(b);
     Object.entries(mins).filter(([, v]) => v > 0).sort((x, y) => (w[y[0]] || 0) - (w[x[0]] || 0)).forEach(([k, v]) => {
@@ -167,7 +179,7 @@
   function goalWeights(p) {
     const g = goalOf(p), w = {};
     Object.entries(g.weights).forEach(([k, v]) => { if (v > 0) w[k] = v; });
-    if (g.blend) Object.entries(C.roles[p.role].weights).forEach(([k, v]) => { w[k] = (w[k] || 0) + v / 3; });
+    if (g.blend) Object.entries(prof(p).weights).forEach(([k, v]) => { w[k] = (w[k] || 0) + v / 3; });
     return w;
   }
   function goalSkills(p) {
@@ -181,13 +193,13 @@
   const owned = p => new Set([...p.baseSkills, ...p.extraSkills]);
   function skillValue(p, k) {
     if ((p.lockedExtras || []).includes(k)) return "lock";
-    const role = C.roles[p.role] || { skills: [] };
+    const role = prof(p);
     if (role.skills.includes(k)) return "key";
     if (k === "Super-sub") return p.group === "Panchina" ? "key" : "weak";
     if (k === "Captaincy") return p.id === S.captainId ? "key" : "weak";
     if (C.lowValueSkills.includes(k)) return "weak";
     const cat = SK[k] && SK[k].cat;
-    if (/DC|Terzino|MED|Mediano/.test(p.role) && (cat === "dri" || cat === "sho")) return "weak";
+    if (["DC", "TS", "TD", "MED"].includes(p.role) && (cat === "dri" || cat === "sho")) return "weak";
     if (p.role === "PT" && cat !== "gk" && cat !== "pas") return "weak";
     return "neutral";
   }
@@ -233,7 +245,7 @@
     return h;
   }
   function sheetSlot(p, i) {
-    const k = p.extraSkills[i], role = C.roles[p.role], own = owned(p);
+    const k = p.extraSkills[i], role = prof(p), own = owned(p);
     const avail = Object.entries(S.stock).filter(([s, q]) => q > 0 && !own.has(s));
     const rec = avail.filter(([s]) => role.skills.includes(s)), other = avail.filter(([s]) => !role.skills.includes(s));
     const opt = ([s, q]) => `<button class="opt" data-act="pickSkill" data-k="${esc(s)}"><span>${esc(it(s))}</span><small>${q} in magazzino</small></button>`;
@@ -286,7 +298,7 @@
     if (isTrending(p)) h += `<p class="muted">Carta Trending: livello fisso, nessun punto da distribuire.</p>`;
     else {
       h += `<div class="pts"><span class="ptsn"><b class="${tot != null && tot - sp > 0 ? "gold" : ""}">${tot == null ? "?" : tot - sp}</b> punti liberi su ${tot ?? "?"}</span>
-        <span class="acts"><button class="btn small" data-act="opt" data-zero="1" ${tot == null ? "disabled" : ""}>Auto per ruolo</button><button class="btn small ghost" data-act="reset">Azzera</button></span></div>
+        <span class="acts"><button class="btn small" data-act="opt" data-zero="1" ${tot == null ? "disabled" : ""}>Auto per posizione</button><button class="btn small ghost" data-act="reset">Azzera</button></span></div>
         <div class="levels">${visibleCats(p).map(c => {
           const L = p.build[c.key] || 0, nc = levelCost(L + 1), can = tot != null && tot - sp >= nc;
           return `<div class="lv"><span class="ln">${esc(c.name)}</span>
@@ -297,7 +309,7 @@
       if (tot == null) h += `<p class="warn">Punti progressione non noti: inseriscili nella tab Scheda.</p>`;
     }
     h += `</section>`;
-    const st = statsFor(p, mode), base = p.card.stats, gk = goalKeys(p), w = C.roles[p.role].weights;
+    const st = statsFor(p, mode), base = p.card.stats, gk = goalKeys(p), w = prof(p).weights;
     const score = weightedScore(st, w), sBase = weightedScore(base, w);
     const cols = [
       { n: "Attacco", s: C.statGroups[0].stats },
@@ -308,7 +320,7 @@
     h += `<section class="panel">
       <div class="shead"><div class="seg small" role="tablist" aria-label="Valori mostrati">
         ${[["base", "Carta"], ["build", "Build"], ["mgr", m ? "+ " + m.name.split(" ").pop() : "+ allenatore"]].map(([k, l]) => `<button role="tab" data-act="mode" data-m="${k}" aria-selected="${mode === k}" ${k === "mgr" && !m ? "disabled" : ""}>${esc(l)}</button>`).join("")}</div>
-        <div class="score" title="Media pesata delle statistiche che contano per il ruolo scelto. Non è l'overall del gioco."><b>${score.toFixed(1)}</b> punteggio ruolo (non è l'overall)${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
+        <div class="score" title="Stima provvisoria: media pesata delle statistiche che contano in questa posizione. Diventerà l'OV esatto quando avremo la formula."><b>${score.toFixed(1)}</b> stima ${esc(p.role)} (non ancora OV)${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
       <div class="scols">${cols.map(col => `<div class="scol">${col.s.map(k => {
         const v = st[k], d = v - base[k];
         return `<div class="srow ${band(v)}"><span class="sl">${esc(C.stats[k])}</span>${gk.includes(k) ? `<i class="dot" title="nel tuo obiettivo"></i>` : ""}${d > 0 ? `<small>+${d}</small>` : ""}<b class="badge ${band(v)}">${v}</b></div>`;
@@ -336,7 +348,7 @@
       }).join("") + `</div>`;
     }
     h += `<div class="gopts"><select data-act="goalAdd" aria-label="Aggiungi statistica"><option value="">+ aggiungi statistica</option>${STAT_KEYS.filter(k => !g.weights[k]).map(k => `<option value="${k}">${esc(C.stats[k])}</option>`).join("")}</select>
-      <label class="chk"><input type="checkbox" data-act="goalBlend" ${g.blend ? "checked" : ""}> considera anche il ruolo</label></div>`;
+      <label class="chk"><input type="checkbox" data-act="goalBlend" ${g.blend ? "checked" : ""}> considera anche la posizione</label></div>`;
     if (!isTrending(p)) h += `<div class="acts"><button class="btn primary big" data-act="optGoal" ${keys.length && totalPoints(p) != null ? "" : "disabled"}>Calcola la build</button>${keys.length ? `<button class="btn ghost" data-act="goalClear">Svuota</button>` : ""}</div>`;
     h += `</section>`;
     if (keys.length) {
@@ -353,7 +365,7 @@
   }
 
   function viewSkills(p) {
-    const role = C.roles[p.role], own = owned(p);
+    const role = prof(p), own = owned(p);
     let h = `<section class="panel"><h3>Abilità della carta</h3><div class="chips">${p.baseSkills.map(k => `<span class="chip ${isSpecial(k) ? "sp" : ""}" title="${esc(k)}">${esc(it(k))}</span>`).join("")}</div></section>
       <section class="panel"><h3>Competenze aggiuntive <span class="muted">${p.extraSkills.length}/${MAX_EXTRA}</span></h3>`;
     if (!canTrain(p)) h += `<p class="muted">Carta Trending: non può imparare abilità extra.</p>`;
@@ -363,7 +375,7 @@
         const k = p.extraSkills[i];
         if (k) {
           const v = skillValue(p, k);
-          h += `<button class="slot ${v}" data-act="openSlot" data-i="${i}"><span class="sname">${esc(it(k))}</span><span class="stag">${v === "key" ? "utile al ruolo" : v === "weak" ? "poco utile qui" : v === "lock" ? "bloccata" : ""}</span><span class="chev">›</span></button>`;
+          h += `<button class="slot ${v}" data-act="openSlot" data-i="${i}"><span class="sname">${esc(it(k))}</span><span class="stag">${v === "key" ? "utile in " + esc(p.role) : v === "weak" ? "poco utile qui" : v === "lock" ? "bloccata" : ""}</span><span class="chev">›</span></button>`;
         } else h += `<button class="slot empty" data-act="openSlot" data-i="${i}"><span class="sname">+ Aggiungi abilità</span><span class="chev">›</span></button>`;
       }
       h += `</div><p class="muted">Tocca uno slot per aggiungere, sostituire, bloccare o eliminare.</p>`;
@@ -371,7 +383,7 @@
     warnings(p).forEach(x => h += `<p class="warn">${esc(x)}</p>`);
     h += `</section>`;
     const missing = role.skills.filter(k => !own.has(k));
-    h += `<section class="panel"><h3>Mancano per ${esc(p.role)}</h3>${missing.length ? `<div class="chips">${missing.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `${q} in magazzino` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">Ha già tutte le abilità prioritarie del ruolo.</p>`}
+    h += `<section class="panel"><h3>Mancano per ${esc(p.role)}</h3>${missing.length ? `<div class="chips">${missing.map(k => { const q = S.stock[k] || 0; return `<span class="chip ${q ? "avail" : ""}">${esc(it(k))}<small>${q ? `${q} in magazzino` : "da recuperare"}</small></span>`; }).join("")}</div>` : `<p class="muted">Ha già tutte le abilità prioritarie per la posizione.</p>`}
       ${p.group === "Panchina" && !own.has("Super-sub") && canTrain(p) ? `<p class="note">Se entra quasi sempre nel secondo tempo, valuta Riserva di lusso (${S.stock["Super-sub"] || 0} in magazzino).</p>` : ""}</section>`;
     return h;
   }
@@ -396,7 +408,7 @@
     </section>
     <section class="panel"><h3>Impostazioni carta</h3>
       <div class="ctrls">
-        <label>Ruolo<select data-act="role">${Object.keys(C.roles).map(r => `<option ${r === p.role ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
+        <label>Posizione<select data-act="role">${C.positions.map(r => `<option ${r === p.role ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
         <label>Gruppo<select data-act="setGroup">${GROUPS.map(g => `<option ${g === p.group ? "selected" : ""}>${g}</option>`).join("")}</select></label>
         <label>Forma settimana${p.formType === "fissa" ? `<b class="fixed">B fissa</b>` : `<select data-act="form">${forms.map(f => `<option value="${f}" ${f === p.weekForm ? "selected" : ""}>${f || "-"}</option>`).join("")}</select>`}</label>
         ${isTrending(p) ? "" : `<label>Punti progressione<input type="number" inputmode="numeric" min="0" max="200" value="${totalPoints(p) ?? ""}" data-act="points"></label>`}
@@ -414,10 +426,10 @@
   function viewStock() {
     const keys = Object.keys(SK).filter(k => !SK[k].special && SK[k].cat !== "gk").concat(Object.keys(S.stock).filter(k => !SK[k]));
     const uniq = [...new Set(keys)].sort((a, b) => (S.stock[b] || 0) - (S.stock[a] || 0) || it(a).localeCompare(it(b)));
-    return `<section class="panel"><h2 class="ptitle">Magazzino abilità</h2><p class="muted">Copie salvate e giocatori a cui servirebbero per il loro ruolo. ● = ha slot liberi.</p>
+    return `<section class="panel"><h2 class="ptitle">Magazzino abilità</h2><p class="muted">Copie salvate e giocatori a cui servirebbero nella loro posizione. ● = ha slot liberi.</p>
     <div class="stock">${uniq.map(k => {
       const q = S.stock[k] || 0;
-      const who = S.players.filter(p => canTrain(p) && !owned(p).has(k) && (C.roles[p.role].skills.includes(k) || (k === "Super-sub" && p.group === "Panchina")))
+      const who = S.players.filter(p => canTrain(p) && !owned(p).has(k) && (prof(p).skills.includes(k) || (k === "Super-sub" && p.group === "Panchina")))
         .sort((a, b) => (b.extraSkills.length < MAX_EXTRA) - (a.extraSkills.length < MAX_EXTRA) || (a.group === "Titolari" ? -1 : 1));
       return `<div class="srec ${q ? "" : "zero"}"><div class="sr1"><b>${esc(it(k))}</b><span class="lctl"><button data-act="stock" data-k="${esc(k)}" data-d="-1" ${q ? "" : "disabled"} aria-label="Togli una copia">−</button><b>${q}</b><button data-act="stock" data-k="${esc(k)}" data-d="1" aria-label="Aggiungi una copia">+</button></span></div>
         ${who.length ? `<div class="who">${who.slice(0, 8).map(p => `<button class="link" data-act="goto" data-id="${p.id}">${esc(p.name)}${p.extraSkills.length < MAX_EXTRA ? " ●" : ""}</button>`).join("")}</div>` : ""}</div>`;
@@ -444,7 +456,7 @@
       <div class="ctrls"><input type="text" data-act="newBooster" placeholder="Nome nuovo booster" aria-label="Nome nuovo booster"><button class="btn small" data-act="addBooster">Aggiungi</button></div></section>
     <section class="panel"><h2 class="ptitle">Abilità tolte</h2>
       <label class="chk"><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
-    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610091030. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
+    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610091040. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
     <section class="panel"><h2 class="ptitle">Regole di progressione</h2>
       <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto ${C.statCap}. Verificate in gioco su Conceição.</p>
       <table class="rules">${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</table></section>`;
@@ -465,7 +477,7 @@
     ["ID", p => p.id, (p, v) => { p.id = String(v); }],
     ["Nome", p => p.name, (p, v) => { p.name = v; }],
     ["Gruppo", p => p.group, (p, v) => { p.group = v; }],
-    ["Ruolo", p => p.role, (p, v) => { if (C.roles[v]) p.role = v; else return `ruolo "${v}" sconosciuto`; }],
+    ["Posizione", p => p.role, (p, v) => { const x = String(v).split(/[\/\s]+/)[0].toUpperCase(); if (C.positions.includes(x)) p.role = x; else return `posizione "${v}" sconosciuta`; }],
     ["Tipo carta", p => p.card.cardType, (p, v) => { p.card.cardType = v; }],
     ["Pack", p => p.card.pack, (p, v) => { p.card.pack = v; }],
     ["Link pesdb", p => p.card.pesdbUrl, (p, v) => { p.card.pesdbUrl = v; }],
@@ -500,7 +512,7 @@
       ["Liste (Posizioni, Abilità)", "Separa i valori con | oppure ;"],
       ["Abilità", "Nome italiano o inglese, come nel foglio Abilità"],
       ["Booster 1 / 2", "Formato: Nome +valore, per esempio Duelli +3"],
-      ["Ruolo", Object.keys(C.roles).join(", ")],
+      ["Posizione", C.positions.join(", ")],
       ["Gruppo", GROUPS.join(", ")],
       ["Tipo carta", "Epic, Big Time, Show Time, Featured, Trending, Highlight"],
       ["Tipo forma", "fissa (Epiche e Big Time) oppure variabile"],
@@ -553,13 +565,13 @@
       const isNew = !p;
       if (isNew) {
         id = id || ("c-" + (name + "-" + (norm["Pack"] || "")).toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
-        p = player(id) || { id, name, group: "Panchina", role: C.defaultRoles[name] || Object.keys(C.roles)[0], status: "", webTier: "", formType: "variabile", weekForm: "", boosters: [], baseSkills: [], extraSkills: [], lockedExtras: [], img: null, build: {}, pointsOverride: null,
+        p = player(id) || { id, name, group: "Panchina", role: "CC", status: "", webTier: "", formType: "variabile", weekForm: "", boosters: [], baseSkills: [], extraSkills: [], lockedExtras: [], img: null, build: {}, pointsOverride: null,
           card: { pesdbId: "", pesdbUrl: "", pack: "", cardType: "", ovr: null, maxOvr: null, pos: "", positions: [], attStyle: "", defStyle: "", height: null, weight: null, foot: "R", wfUsage: "", wfAcc: "", form: "", injury: "", stats: {}, points: null } };
       }
       const errs = [];
       COLS.forEach(([h, , set]) => {
         if (h === "ID") return;
-        const v = norm[h];
+        const v = norm[h] ?? (h === "Posizione" ? norm.Ruolo : undefined);
         if (v === undefined || String(v).trim() === "") return;
         const e = set(p, String(v).trim()); if (e) errs.push(e);
       });
@@ -622,7 +634,7 @@
       const k = t.dataset.k, b = Object.assign({}, p.build, { [k]: Math.max(0, (p.build[k] || 0) + Number(t.dataset.d)) });
       if (spentOf(b) <= totalPoints(p)) setBuild(p, b);
     }
-    else if (a === "opt") { setBuild(p, optimize(p, true)); toast("Build automatica per il ruolo"); }
+    else if (a === "opt") { setBuild(p, optimize(p, true)); toast("Build automatica per " + p.role); }
     else if (a === "reset") setBuild(p, {});
     else if (a === "lock") { const k = t.dataset.k; p.lockedExtras = (p.lockedExtras || []).includes(k) ? p.lockedExtras.filter(x => x !== k) : (p.lockedExtras || []).concat(k); render(); }
     else if (a === "remove") { const k = p.extraSkills.splice(Number(t.dataset.i), 1)[0]; if (S.returnRemoved) S.stock[k] = (S.stock[k] || 0) + 1; S.ui.sheet = null; toast(`${it(k)} eliminata`); render(); }

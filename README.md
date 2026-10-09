@@ -13,7 +13,7 @@ Nessun server, nessuna dipendenza: HTML, CSS e JavaScript.
 | `index.html`, `styles.css`, `app.js` | L'app |
 | `data/roster.js` | Dati iniziali: 30 carte (statistiche, stili, abilità base da pesdb.net; booster, abilità extra e note dal file Excel) |
 | `data/skills.js` | Dizionario abilità: nome inglese (pesdb) → nome italiano, categoria, speciale |
-| `data/config.js` | Regole di progressione, profili di ruolo (pesi e abilità prioritarie), ruoli iniziali |
+| `data/config.js` | Regole di progressione, profili per posizione (pesi e abilità prioritarie) |
 | `img/` | Immagini delle carte (dal file Excel) |
 
 ## Obiettivo build

@@ -86,75 +86,54 @@ window.CONFIG = {
     { id: "deschamps", name: "D. Deschamps", add: { "Speed": 1 }, prof: [69, 88, 62, 67, 75, 62], links: [] }
   ],
 
-  // Profili di ruolo: pesi delle statistiche (per l'ottimizzatore) e abilità prioritarie (per il gestore).
-  // I pesi sono una base di partenza ragionata, non dati ufficiali.
+  // Posizioni in campo (sigle del gioco). Pesi provvisori per "Auto" e per la stima, finché non c'è la formula esatta dell'OV.
+  // Le abilità sono quelle prioritarie per la posizione.
+  posFromCard: { GK: "PT", CB: "DC", LB: "TS", RB: "TD", DMF: "MED", CMF: "CC", LMF: "CLS", RMF: "CLD", AMF: "TRQ", LWF: "ESA", RWF: "EDA", SS: "SP", CF: "P" },
   roles: {
     "PT": {
       weights: { "GK Awareness": 3, "GK Reflexes": 3, "GK Reach": 3, "GK Catching": 2, "GK Parrying": 2, "Jumping": 1, "Low Pass": 1, "Lofted Pass": 1 },
       skills: ["GK Low Punt", "GK Long Throw", "GK High Punt", "GK Penalty Saver", "One-touch Pass", "Low Lofted Pass"]
     },
-    "DC incontrista": {
-      weights: { "Defensive Awareness": 3, "Tackling": 3, "Aggression": 3, "Defensive Engagement": 2, "Speed": 2, "Acceleration": 2, "Physical Contact": 2, "Jumping": 2, "Heading": 1, "Balance": 1, "Stamina": 1 },
-      skills: ["Interception", "Blocker", "Aerial Superiority", "Acrobatic Clearance", "Man Marking", "Sliding Tackle", "One-touch Pass", "Fighting Spirit"]
+    "DC": {
+      weights: { "Defensive Awareness": 3, "Tackling": 3, "Defensive Engagement": 2, "Aggression": 2, "Heading": 2, "Jumping": 2, "Physical Contact": 2, "Speed": 2, "Acceleration": 1, "Low Pass": 1, "Lofted Pass": 1 },
+      skills: ["Interception", "Blocker", "Aerial Superiority", "Acrobatic Clearance", "Man Marking", "Sliding Tackle", "One-touch Pass", "Low Lofted Pass", "Fighting Spirit"]
     },
-    "DC costruttore": {
-      weights: { "Defensive Awareness": 3, "Defensive Engagement": 3, "Tackling": 2, "Aggression": 1, "Speed": 2, "Acceleration": 1, "Physical Contact": 2, "Jumping": 2, "Low Pass": 2, "Lofted Pass": 2, "Ball Control": 1 },
-      skills: ["Interception", "Blocker", "Aerial Superiority", "Acrobatic Clearance", "Man Marking", "Sliding Tackle", "One-touch Pass", "Low Lofted Pass", "Weighted Pass"]
+    "TS": {
+      weights: { "Defensive Awareness": 2, "Defensive Engagement": 2, "Tackling": 2, "Aggression": 1, "Speed": 3, "Acceleration": 3, "Stamina": 3, "Lofted Pass": 2, "Low Pass": 1, "Ball Control": 1, "Dribbling": 1, "Physical Contact": 1 },
+      skills: ["Track Back", "Interception", "Man Marking", "Blocker", "Pinpoint Crossing", "One-touch Pass", "Low Lofted Pass", "Sliding Tackle"]
     },
-    "Terzo DC (braccetto)": {
-      weights: { "Defensive Awareness": 3, "Tackling": 2, "Defensive Engagement": 2, "Aggression": 1, "Speed": 2, "Acceleration": 2, "Low Pass": 2, "Lofted Pass": 2, "Stamina": 1, "Physical Contact": 1 },
-      skills: ["Interception", "Blocker", "Man Marking", "Acrobatic Clearance", "Aerial Superiority", "Sliding Tackle", "One-touch Pass", "Low Lofted Pass", "Track Back"]
+    "MED": {
+      weights: { "Defensive Awareness": 3, "Tackling": 3, "Defensive Engagement": 3, "Aggression": 2, "Low Pass": 2, "Lofted Pass": 2, "Physical Contact": 2, "Stamina": 2, "Ball Control": 1, "Speed": 1, "Acceleration": 1, "Jumping": 1 },
+      skills: ["Interception", "Blocker", "Man Marking", "Sliding Tackle", "Track Back", "Aerial Superiority", "Acrobatic Clearance", "One-touch Pass", "Low Lofted Pass"]
     },
-    "Terzino difensivo": {
-      weights: { "Defensive Awareness": 3, "Defensive Engagement": 3, "Tackling": 2, "Aggression": 1, "Speed": 3, "Acceleration": 2, "Stamina": 2, "Physical Contact": 1, "Low Pass": 1, "Lofted Pass": 1 },
-      skills: ["Man Marking", "Interception", "Blocker", "Acrobatic Clearance", "Aerial Superiority", "Sliding Tackle", "One-touch Pass", "Low Lofted Pass", "Track Back"]
-    },
-    "Terzino offensivo": {
-      weights: { "Speed": 3, "Acceleration": 3, "Stamina": 3, "Lofted Pass": 2, "Low Pass": 1, "Curl": 1, "Dribbling": 1, "Defensive Awareness": 2, "Tackling": 1, "Defensive Engagement": 2 },
-      skills: ["Track Back", "Interception", "Man Marking", "Blocker", "Pinpoint Crossing", "One-touch Pass", "Through Passing", "Sliding Tackle"]
-    },
-    "MED collante": {
-      weights: { "Defensive Awareness": 3, "Defensive Engagement": 3, "Tackling": 2, "Aggression": 2, "Low Pass": 2, "Lofted Pass": 2, "Physical Contact": 2, "Stamina": 2, "Jumping": 1, "Speed": 1 },
-      skills: ["Interception", "Blocker", "Man Marking", "Aerial Superiority", "Sliding Tackle", "Acrobatic Clearance", "One-touch Pass", "Low Lofted Pass", "Through Passing"]
-    },
-    "Mediano incontrista": {
-      weights: { "Tackling": 3, "Aggression": 3, "Defensive Engagement": 3, "Defensive Awareness": 2, "Stamina": 2, "Acceleration": 2, "Physical Contact": 2, "Speed": 1 },
-      skills: ["Interception", "Blocker", "Man Marking", "Sliding Tackle", "Track Back", "Aerial Superiority", "Acrobatic Clearance", "One-touch Pass"]
-    },
-    "CC box-to-box": {
-      weights: { "Stamina": 3, "Low Pass": 2, "Lofted Pass": 1, "Ball Control": 2, "Defensive Awareness": 2, "Tackling": 2, "Defensive Engagement": 2, "Aggression": 1, "Physical Contact": 2, "Speed": 1, "Acceleration": 1, "Finishing": 1, "Kicking Power": 1 },
+    "CC": {
+      weights: { "Low Pass": 3, "Ball Control": 2, "Lofted Pass": 2, "Stamina": 2, "Tight Possession": 1, "Dribbling": 1, "Defensive Awareness": 2, "Tackling": 1, "Defensive Engagement": 1, "Physical Contact": 1, "Acceleration": 1, "Attacking Awareness": 1, "Kicking Power": 1 },
       skills: ["One-touch Pass", "Through Passing", "Interception", "Track Back", "Blocker", "Man Marking", "Long-range Shooting", "Double Touch"]
     },
-    "Regista / TRQ creativo": {
-      weights: { "Low Pass": 3, "Lofted Pass": 3, "Ball Control": 3, "Dribbling": 2, "Tight Possession": 2, "Attacking Awareness": 2, "Acceleration": 2, "Balance": 2, "Curl": 1, "Finishing": 1, "Kicking Power": 1 },
+    "CLS": {
+      weights: { "Stamina": 3, "Speed": 2, "Acceleration": 2, "Lofted Pass": 2, "Low Pass": 2, "Ball Control": 2, "Dribbling": 2, "Curl": 1, "Defensive Awareness": 1, "Defensive Engagement": 1 },
+      skills: ["Pinpoint Crossing", "Track Back", "One-touch Pass", "Through Passing", "Double Touch", "Interception"]
+    },
+    "TRQ": {
+      weights: { "Low Pass": 3, "Ball Control": 3, "Lofted Pass": 2, "Dribbling": 2, "Tight Possession": 2, "Attacking Awareness": 2, "Acceleration": 2, "Balance": 2, "Curl": 1, "Finishing": 1, "Kicking Power": 1 },
       skills: ["One-touch Pass", "Through Passing", "Double Touch", "Long-range Curler", "Sole Control", "Cut Behind & Turn", "First-time Shot", "Outside Curler", "Track Back"]
     },
-    "Ala da tiro a giro": {
-      weights: { "Curl": 3, "Dribbling": 3, "Acceleration": 3, "Finishing": 2, "Kicking Power": 2, "Ball Control": 2, "Tight Possession": 2, "Speed": 2, "Balance": 2, "Attacking Awareness": 2, "Set Piece Taking": 1 },
+    "ESA": {
+      weights: { "Dribbling": 3, "Acceleration": 3, "Speed": 3, "Ball Control": 2, "Tight Possession": 2, "Curl": 2, "Finishing": 2, "Attacking Awareness": 2, "Balance": 2, "Kicking Power": 1, "Lofted Pass": 1 },
       skills: ["Long-range Curler", "Double Touch", "Cut Behind & Turn", "Sole Control", "First-time Shot", "Acrobatic Finishing", "Track Back", "Outside Curler", "Gamesmanship", "Fighting Spirit"]
     },
-    "Opportunista": {
-      weights: { "Attacking Awareness": 3, "Finishing": 3, "Acceleration": 3, "Speed": 3, "Ball Control": 2, "Dribbling": 2, "Balance": 2, "Kicking Power": 2, "Curl": 1 },
-      skills: ["First-time Shot", "Acrobatic Finishing", "Long-range Curler", "Double Touch", "Sole Control", "Chip Shot Control", "Rising Shot", "Fighting Spirit"]
+    "SP": {
+      weights: { "Attacking Awareness": 3, "Ball Control": 3, "Dribbling": 2, "Tight Possession": 2, "Finishing": 2, "Acceleration": 2, "Balance": 2, "Low Pass": 2, "Curl": 1, "Kicking Power": 1, "Speed": 1 },
+      skills: ["First-time Shot", "Double Touch", "Long-range Curler", "One-touch Pass", "Through Passing", "Sole Control", "Cut Behind & Turn", "Fighting Spirit"]
     },
-    "Rapace d'area": {
-      weights: { "Attacking Awareness": 3, "Finishing": 3, "Heading": 3, "Physical Contact": 3, "Jumping": 2, "Ball Control": 2, "Kicking Power": 2, "Acceleration": 2, "Speed": 1, "Balance": 1 },
-      skills: ["First-time Shot", "Heading", "Acrobatic Finishing", "Aerial Superiority", "Long-range Curler", "Cut Behind & Turn", "Sole Control", "Fighting Spirit"]
+    "P": {
+      weights: { "Attacking Awareness": 3, "Finishing": 3, "Ball Control": 2, "Kicking Power": 2, "Acceleration": 2, "Speed": 2, "Heading": 2, "Physical Contact": 2, "Jumping": 1, "Dribbling": 1, "Balance": 1 },
+      skills: ["First-time Shot", "Acrobatic Finishing", "Heading", "Long-range Curler", "Double Touch", "Sole Control", "Chip Shot Control", "Rising Shot", "Fighting Spirit"]
     }
   },
-  // Ruolo iniziale suggerito per ogni carta (modificabile nell'app)
-  defaultRoles: {
-    "Oliver Kahn": "PT", "Alessandro Costacurta": "Terzino difensivo", "Fabio Cannavaro": "DC incontrista",
-    "Massimo Oddo": "Terzo DC (braccetto)", "Frank Rijkaard": "MED collante", "Kevin De Bruyne": "Regista / TRQ creativo",
-    "Antoine Griezmann": "Regista / TRQ creativo", "Alessandro Del Piero": "Ala da tiro a giro", "Francisco Conceição": "Ala da tiro a giro",
-    "Marco van Basten": "Rapace d'area", "Alessandro Bastoni": "DC costruttore", "Virgil van Dijk": "DC costruttore",
-    "Manuel Akanji": "DC incontrista", "Dean Huijsen": "DC costruttore", "Ezri Konsa": "DC costruttore", "Marquinhos": "DC costruttore",
-    "Franz Beckenbauer": "DC costruttore", "Cafu": "Terzino offensivo", "Gennaro Gattuso": "Mediano incontrista",
-    "Steven Gerrard": "CC box-to-box", "Mark van Bommel": "MED collante", "Dani Olmo": "Regista / TRQ creativo",
-    "Adrien Rabiot": "CC box-to-box", "Jude Bellingham": "CC box-to-box", "Neymar Jr": "Ala da tiro a giro",
-    "Andriy Shevchenko": "Opportunista", "Alexandre Pato": "Opportunista", "Kaká": "Regista / TRQ creativo",
-    "Gareth Bale": "Ala da tiro a giro", "Luis Suárez": "Rapace d'area"
-  },
+  // Ordine delle posizioni nei menu; quelle speculari usano gli stessi pesi
+  positions: ["PT", "DC", "TS", "TD", "MED", "CC", "CLS", "CLD", "TRQ", "ESA", "EDA", "SP", "P"],
+  posAlias: { TD: "TS", CLD: "CLS", EDA: "ESA" },
 
   // Interprete delle richieste in linguaggio naturale (senza AI): parole chiave -> statistiche e peso.
   // Peso 3 = statistica principale della richiesta, 2 = di supporto.
