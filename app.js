@@ -32,6 +32,13 @@
       const sp = SEED.players.find(p => p.name === "Gennaro Gattuso"), p = sp && s.players.find(x => x.id === sp.id);
       if (p && !Object.keys(p.build || {}).length) p.build = Object.assign({}, sp.build);
     });
+    // Build reali inserite da Albe: sovrascrivono quelle calcolate in automatico
+    once("real-builds-v2", () => {
+      ["Gennaro Gattuso", "Francisco"].forEach(n => {
+        const sp = SEED.players.find(p => p.name.startsWith(n)), p = sp && s.players.find(x => x.id === sp.id);
+        if (p && sp.build) p.build = Object.assign({}, sp.build);
+      });
+    });
     once("managers-v1", () => {
       s.managers = JSON.parse(JSON.stringify(C.managers));
       s.mgrId = "conte"; s.teamStyle = "Contropiede veloce"; s.mgrOn = s.manager ? s.manager.on !== false : true;
@@ -114,6 +121,7 @@
     return t ? a / t : 0;
   }
   // Ottimizzatore: 1) raggiunge i minimi richiesti, 2) spende il resto dove il peso guadagnato per punto è massimo
+  const marginal = v => v >= C.statCap ? 0 : v >= 95 ? 0.15 : v >= 90 ? 0.35 : v >= 85 ? 0.6 : v >= 80 ? 0.8 : 1;
   function optimize(p, fromZero, w = C.roles[p.role].weights, mins = {}) {
     const b = fromZero ? {} : Object.assign({}, p.build);
     let left = totalPoints(p) - spentOf(b);
@@ -132,7 +140,8 @@
       C.categories.forEach(c => {
         const cost = levelCost((b[c.key] || 0) + 1);
         if (cost > left) return;
-        const gain = c.stats.reduce((a, k) => a + (st[k] < C.statCap ? (w[k] || 0) : 0), 0);
+        // rendimento decrescente: oltre 80 ogni punto vale meno, a 99 zero (evita build tipo Difesa 20)
+        const gain = c.stats.reduce((a, k) => a + (w[k] || 0) * marginal(st[k]), 0);
         if (gain <= 0) return;
         const r = gain / cost;
         if (!best || r > best.r) best = { k: c.key, r, cost };
@@ -435,7 +444,7 @@
       <div class="ctrls"><input type="text" data-act="newBooster" placeholder="Nome nuovo booster" aria-label="Nome nuovo booster"><button class="btn small" data-act="addBooster">Aggiungi</button></div></section>
     <section class="panel"><h2 class="ptitle">Abilità tolte</h2>
       <label class="chk"><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
-    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610090144. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
+    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610091030. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
     <section class="panel"><h2 class="ptitle">Regole di progressione</h2>
       <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto ${C.statCap}. Verificate in gioco su Conceição.</p>
       <table class="rules">${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</table></section>`;
