@@ -21,3 +21,8 @@ P 86, SP 89, ESA 93, EDA 93, TRQ 93, CLS 97, CLD 97, CC 100, MED 105, DC 107, TS
 
 Progressione: ogni livello = +1 a ogni statistica della categoria (lineare, verificato nel video).
 I salti di +2/+3 compaiono solo attivando l'allenatore (bonus 3,6% arrotondato per difetto).
+
+## Formula (integrata nell'app)
+Pesi per posizione e moltiplicatori allenatore dal tool open source
+https://github.com/Dominkroptru123/EFootball-Progression-Points-Tool, con troncamento a 2 decimali come efhub.
+Riproduce tutti i valori sopra al centesimo, compresi gli OV per posizione.

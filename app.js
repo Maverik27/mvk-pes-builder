@@ -69,8 +69,8 @@
   // Allenatore attivo: booster fissi + bonus da competenza nello stile di squadra scelto
   function mgrInfo(m) {
     const i = C.teamStyles.indexOf(S.teamStyle), prof = m && i >= 0 ? m.prof[i] : 0;
-    const rule = C.proficiencyBoost.slice().sort((a, b) => b.min - a.min).find(r => prof >= r.min);
-    return { prof, pct: rule ? rule.pct : 0 };
+    const T = C.mgrMultipliers, mult = m && i >= 0 ? T[Math.min(Math.max(prof - 50, 0), T.length - 1)] : 1;
+    return { prof, mult, pct: Math.round((mult - 1) * 10000) / 100 };
   }
   function activeMgr() {
     if (!S.mgrOn) return null;
@@ -118,13 +118,41 @@
     const out = {};
     if (mode === "base") { STAT_KEYS.forEach(k => out[k] = p.card.stats[k]); return out; }
     const tr0 = trainedStats(p, build), add = boosterAdds(p), m = activeMgr();
-    // Modello verificato su 3 schermate (Conceição con Conte e Koeman, Gattuso con Conte):
-    // bonus competenza = floor(valore allenato * pct%), tetto 99 su allenato + bonus, poi booster carta e booster allenatore oltre il tetto
+    // Ordine del gioco: progressione (tetto 99) -> competenza allenatore (floor, tetto 99) -> +1 allenatore -> booster carta (oltre il tetto)
     STAT_KEYS.forEach(k => {
       let v = tr0[k];
-      if (mode === "mgr" && m) v = Math.min(C.statCap, v + Math.floor(v * Math.round(m.pct * 10) / 1000));
+      if (mode === "mgr" && m && m.mult !== 1) v = Math.min(C.statCap, v + Math.floor(v * (m.mult - 1)));
       out[k] = v + (add[k] || 0) + (mode === "mgr" && m ? (m.add[k] || 0) : 0);
     });
+    return out;
+  }
+  // Overall esatto per posizione (formula del gioco, uguale a efhub)
+  function ovOf(p, stats, pos = p.role) {
+    const O = C.ov, pi = O.posIndex[pos], c = v => v > 25 ? v - 25 : 0;
+    if (pi == null) return null;
+    let t = O.weights[O.heightOffset + pi] * c((p.card.height || 175) - 111);
+    STAT_KEYS.forEach(k => { const off = O.offsets[k]; if (off != null) t += O.weights[off + pi] * c(stats[k]); });
+    t += O.weights[O.wfOffset + pi] * c(Math.floor(59 * (O.wfIndex[p.card.wfAcc] ?? 1) / 3 + 40));
+    return Math.max(Math.floor((t + 500) / 10) / 100, 40);
+  }
+  const ovMode = () => activeMgr() ? "mgr" : "build";
+  // Build che massimizza l'OV nella posizione: zaino esatto sulle categorie (ogni statistica dipende da una sola categoria)
+  function optimizeOV(p, mode = ovMode()) {
+    const budget = totalPoints(p) || 0, cats = visibleCats(p), base = ovOf(p, statsFor(p, mode, {}));
+    const val = cats.map(c => { const r = []; for (let L = 0; L <= 25; L++) r.push(ovOf(p, statsFor(p, mode, { [c.key]: L })) - base); return r; });
+    const cost = L => { let t = 0; for (let i = 1; i <= L; i++) t += levelCost(i); return t; };
+    let dp = new Array(budget + 1).fill(0), pick = [];
+    cats.forEach((c, ci) => {
+      const nd = new Array(budget + 1).fill(-1), ch = new Array(budget + 1).fill(0);
+      for (let b = 0; b <= budget; b++) for (let L = 0; L <= 25; L++) {
+        const k = cost(L); if (k > b) break;
+        const v = dp[b - k] + val[ci][L] - L * 1e-6; // a parità di OV preferisce meno livelli
+        if (v > nd[b]) { nd[b] = v; ch[b] = L; }
+      }
+      pick.push(ch); dp = nd;
+    });
+    const out = {}; let b = budget;
+    for (let ci = cats.length - 1; ci >= 0; ci--) { const L = pick[ci][b]; if (L) out[cats[ci].key] = L; b -= cost(L); }
     return out;
   }
   function weightedScore(stats, w) {
@@ -286,7 +314,7 @@
         <option value="" ${S.mgrOn ? "" : "selected"}>Nessuno</option>
         ${S.managers.map(x => `<option value="${x.id}" ${S.mgrOn && x.id === S.mgrId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
       <label class="mgrsel"><span>Stile di squadra</span><select data-act="teamStyle" aria-label="Stile di squadra">${C.teamStyles.map(t => `<option ${t === S.teamStyle ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-      ${m ? `<div class="mgrfx">${Object.entries(m.add).map(([k, v]) => `<span class="pill">${esc(C.stats[k])} +${v}</span>`).join("")}<span class="pill ${m.pct ? "ok" : "ko"}">Competenza ${m.prof}${m.pct ? ` → +${String(m.pct).replace(".", ",")}%` : " → nessun bonus"}</span></div>` : ""}
+      ${m ? `<div class="mgrfx">${Object.entries(m.add).map(([k, v]) => `<span class="pill">${esc(C.stats[k])} +${v}</span>`).join("")}<span class="pill ${m.pct > 0 ? "ok" : "ko"}">Competenza ${m.prof} → ${m.pct > 0 ? "+" : ""}${String(m.pct).replace(".", ",")}%${m.pct ? "" : " (nessun effetto)"}</span></div>` : ""}
     </div>`;
   }
 
@@ -310,7 +338,8 @@
     }
     h += `</section>`;
     const st = statsFor(p, mode), base = p.card.stats, gk = goalKeys(p), w = prof(p).weights;
-    const score = weightedScore(st, w), sBase = weightedScore(base, w);
+    const ov = ovOf(p, st), ovBase = ovOf(p, base);
+    const others = C.positions.filter(x => x !== p.role).map(x => [x, ovOf(p, st, x)]).sort((a, b) => b[1] - a[1]).slice(0, 4);
     const cols = [
       { n: "Attacco", s: C.statGroups[0].stats },
       { n: "Difesa", s: p.role === "PT" ? C.statGroups[1].stats.concat(C.statGroups[3].stats) : C.statGroups[1].stats },
@@ -320,7 +349,8 @@
     h += `<section class="panel">
       <div class="shead"><div class="seg small" role="tablist" aria-label="Valori mostrati">
         ${[["base", "Carta"], ["build", "Build"], ["mgr", m ? "+ " + m.name.split(" ").pop() : "+ allenatore"]].map(([k, l]) => `<button role="tab" data-act="mode" data-m="${k}" aria-selected="${mode === k}" ${k === "mgr" && !m ? "disabled" : ""}>${esc(l)}</button>`).join("")}</div>
-        <div class="score" title="Stima provvisoria: media pesata delle statistiche che contano in questa posizione. Diventerà l'OV esatto quando avremo la formula."><b>${score.toFixed(1)}</b> stima ${esc(p.role)} (non ancora OV)${mode !== "base" && score - sBase >= 0.05 ? ` <span class="gold">+${(score - sBase).toFixed(1)}</span>` : ""}</div></div>
+        <div class="score" title="Overall calcolato con la formula del gioco, uguale a efhub"><b>${ov.toFixed(2)}</b> OV ${esc(p.role)}${mode !== "base" && ov - ovBase >= 0.01 ? ` <span class="gold">+${(ov - ovBase).toFixed(2)}</span>` : ""}</div></div>
+      <p class="muted ovpos">Altre posizioni: ${others.map(([x, v]) => `${x} ${v.toFixed(2)}`).join(" · ")}</p>
       <div class="scols">${cols.map(col => `<div class="scol">${col.s.map(k => {
         const v = st[k], d = v - base[k];
         return `<div class="srow ${band(v)}"><span class="sl">${esc(C.stats[k])}</span>${gk.includes(k) ? `<i class="dot" title="nel tuo obiettivo"></i>` : ""}${d > 0 ? `<small>+${d}</small>` : ""}<b class="badge ${band(v)}">${v}</b></div>`;
@@ -443,7 +473,7 @@
   }
 
   function viewSettings() {
-    return `<section class="panel"><h2 class="ptitle">Allenatori</h2><p class="muted">Competenza per stile di squadra e booster, da efootballhub. Il bonus si applica se la competenza nello stile scelto è almeno ${C.proficiencyBoost[0].min}.</p>
+    return `<section class="panel"><h2 class="ptitle">Allenatori</h2><p class="muted">Competenza per stile di squadra e booster, da efootballhub. La competenza nello stile scelto alza le statistiche (da 72 in su, massimo +3,65% a 90) o le abbassa (sotto 70).</p>
       <div class="mgrs">${S.managers.map(m => `<div class="mcard ${m.id === S.mgrId && S.mgrOn ? "on" : ""}">
         <div class="mh"><b>${esc(m.name)}</b>${m.id === S.mgrId && S.mgrOn ? `<span class="pill ok">attivo</span>` : `<button class="btn small" data-act="setMgr" data-id="${m.id}">Usa</button>`}</div>
         <div class="mfx">${Object.entries(m.add).map(([k, v]) => `<span class="pill">${esc(C.stats[k])} +${v}</span>`).join("")}</div>
@@ -456,7 +486,7 @@
       <div class="ctrls"><input type="text" data-act="newBooster" placeholder="Nome nuovo booster" aria-label="Nome nuovo booster"><button class="btn small" data-act="addBooster">Aggiungi</button></div></section>
     <section class="panel"><h2 class="ptitle">Abilità tolte</h2>
       <label class="chk"><input type="checkbox" data-act="returnRemoved" ${S.returnRemoved ? "checked" : ""}> Quando sostituisco o elimino un'abilità extra, rimettila in magazzino</label></section>
-    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610091040. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
+    <section class="panel"><h2 class="ptitle">Versione</h2><p class="muted">Build 202610091215. Se non vedi le novità, chiudi e riapri la pagina.</p></section>
     <section class="panel"><h2 class="ptitle">Regole di progressione</h2>
       <p class="muted">Livelli 1-${C.levelBlock} = 1 punto, poi +1 ogni ${C.levelBlock} livelli. Tetto ${C.statCap}. Verificate in gioco su Conceição.</p>
       <table class="rules">${C.categories.map(c => `<tr><td>${esc(c.name)}</td><td>${c.stats.map(k => esc(C.stats[k])).join(", ")}</td></tr>`).join("")}</table></section>`;
@@ -634,7 +664,7 @@
       const k = t.dataset.k, b = Object.assign({}, p.build, { [k]: Math.max(0, (p.build[k] || 0) + Number(t.dataset.d)) });
       if (spentOf(b) <= totalPoints(p)) setBuild(p, b);
     }
-    else if (a === "opt") { setBuild(p, optimize(p, true)); toast("Build automatica per " + p.role); }
+    else if (a === "opt") { setBuild(p, optimizeOV(p)); toast(`Build con l'OV più alto in ${p.role}`); }
     else if (a === "reset") setBuild(p, {});
     else if (a === "lock") { const k = t.dataset.k; p.lockedExtras = (p.lockedExtras || []).includes(k) ? p.lockedExtras.filter(x => x !== k) : (p.lockedExtras || []).concat(k); render(); }
     else if (a === "remove") { const k = p.extraSkills.splice(Number(t.dataset.i), 1)[0]; if (S.returnRemoved) S.stock[k] = (S.stock[k] || 0) + 1; S.ui.sheet = null; toast(`${it(k)} eliminata`); render(); }

@@ -66,7 +66,18 @@ window.CONFIG = {
   // Verificato su 3 schermate efootballhub (Conceição con Conte 90 e Koeman 88, Gattuso con Conte):
   // bonus = floor(valore allenato * 3,6%), tetto 99 su allenato + bonus, poi booster carta e allenatore.
   // Sotto 88 non ancora verificato.
-  proficiencyBoost: [{ min: 88, pct: 3.6 }],
+  // Moltiplicatore delle statistiche in base alla competenza dell'allenatore nello stile scelto (indice = competenza - 50).
+  // Sotto 70 è un malus, da 72 in su un bonus. Fonte: tabella del gioco (tool open source EFootball-Progression-Points-Tool), verificata su efhub.
+  mgrMultipliers: [0.65, 0.6675, 0.685, 0.7025, 0.72, 0.7375, 0.755, 0.7725, 0.79, 0.8075, 0.825, 0.8425, 0.86, 0.8775, 0.895, 0.9125, 0.93, 0.9475, 0.965, 0.9825, 1, 1, 1.01163, 1.01389, 1.015625, 1.01755, 1.01925, 1.02125, 1.02275, 1.0244, 1.026, 1.02725, 1.029, 1.03, 1.03196, 1.03275, 1.03375, 1.034091, 1.0355, 1.036, 1.0365, 1.036, 1.036, 1.036, 1.036, 1.036, 1.036, 1.036, 1.036],
+  // Formula dell'overall per posizione (identica a efhub, verificata su 10 valori con decimali di Gattuso MED):
+  // totale = somma(peso[stat][pos] * max(0, stat - 25)) + altezza + precisione piede debole; OV = tronca((totale + 500) / 1000, 2 decimali)
+  ov: {
+    weights: [186, 136, 49, 49, 61, 37, 12, 12, 37, 49, 49, 62, 99, 0, 14, 61, 61, 61, 98, 98, 98, 171, 159, 159, 173, 210, 13, 27, 86, 86, 122, 171, 171, 171, 196, 159, 159, 210, 123, 0, 14, 61, 61, 37, 98, 110, 122, 122, 159, 159, 123, 62, 0, 0, 37, 37, 24, 49, 73, 61, 73, 86, 86, 86, 37, 27, 41, 61, 61, 122, 208, 135, 135, 196, 73, 73, 99, 37, 40, 68, 147, 147, 122, 159, 196, 196, 159, 98, 98, 74, 12, 0, 27, 24, 24, 37, 73, 86, 86, 184, 159, 159, 284, 358, 0, 14, 24, 24, 12, 12, 24, 24, 12, 12, 12, 12, 12, 0, 14, 24, 24, 12, 12, 24, 24, 12, 12, 12, 12, 12, 0, 55, 24, 24, 61, 24, 12, 12, 24, 24, 24, 25, 62, 13, 286, 147, 147, 220, 86, 49, 49, 24, 12, 12, 0, 0, 0, 191, 86, 86, 122, 86, 24, 24, 24, 12, 12, 12, 12, 0, 82, 37, 37, 98, 37, 12, 12, 12, 12, 12, 12, 12, 53, 27, 24, 24, 49, 73, 24, 24, 73, 61, 61, 99, 123, 13, 136, 220, 220, 61, 61, 196, 196, 98, 220, 220, 86, 99, 40, 150, 184, 184, 61, 86, 159, 159, 86, 159, 159, 99, 123, 80, 204, 98, 98, 122, 49, 24, 24, 24, 37, 37, 37, 86, 0, 0, 24, 24, 12, 24, 61, 61, 24, 73, 73, 74, 86, 133, 109, 37, 37, 37, 12, 12, 12, 12, 24, 24, 37, 62, 279, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 226, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 226, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 173, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 173, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 196, 196, 196, 196, 147, 147, 86, 49, 49, 49, 37, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 14, 24, 24, 24, 24, 24, 24, 24, 24, 24, 12, 12],
+    offsets: {"Attacking Awareness": 13, "Ball Control": 26, "Dribbling": 39, "Tight Possession": 52, "Low Pass": 65, "Lofted Pass": 78, "Finishing": 91, "Set Piece Taking": 104, "Curl": 117, "Heading": 130, "Defensive Awareness": 143, "Tackling": 156, "Aggression": 169, "Kicking Power": 182, "Speed": 195, "Acceleration": 208, "Physical Contact": 221, "Balance": 234, "Jumping": 247, "GK Awareness": 260, "GK Reach": 273, "GK Catching": 286, "GK Parrying": 299, "GK Reflexes": 312, "Stamina": 325, "Defensive Engagement": 351},
+    heightOffset: 0, wfOffset: 338,
+    posIndex: { PT: 0, DC: 1, TS: 2, TD: 3, MED: 4, CC: 5, CLS: 6, CLD: 7, TRQ: 8, ESA: 9, EDA: 10, SP: 11, P: 12 },
+    wfIndex: { "Low": 0, "Medium": 1, "High": 2, "Very High": 3 }
+  },
   // Allenatori della rosa (da efootballhub, 9/10/2026). prof = competenza per stile, nello stesso ordine di teamStyles.
   managers: [
     { id: "conte", name: "Antonio Conte", add: { "Defensive Awareness": 1, "Kicking Power": 1 }, prof: [68, 73, 90, 68, 89, 69],
